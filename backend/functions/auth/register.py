@@ -2,10 +2,10 @@ import json
 import uuid
 from typing import Dict, Any
 
-from ..lib.auth import Auth
-from ..lib.response import Response
-from ..lib.db import UserDB
-from ...models.user import User
+from backend.functions.lib.auth import Auth
+from backend.functions.lib.response import Response
+from backend.functions.lib.db import UserDB
+from backend.models.user import User
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Handle user registration with email and password"""

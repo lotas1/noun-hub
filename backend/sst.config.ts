@@ -14,6 +14,14 @@ export default {
     };
   },
   stacks(app) {
+    // Set default runtime globally
+    app.setDefaultFunctionProps({
+      runtime: "python3.9",
+      copyFiles: [
+        { from: ".", to: "backend" }  // Copy entire backend directory
+      ]
+    });
+
     app
       .stack(Storage)
       .stack(Auth)

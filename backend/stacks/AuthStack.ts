@@ -48,7 +48,6 @@ export function Auth({ stack, app }: StackContext) {
       postConfirmation: {
         // Directly specify FunctionProps here
         handler: "functions/auth/post_confirmation.handler",
-        runtime: "python3.9",
         environment: {
           USERS_TABLE: usersTable.tableName,
         },
