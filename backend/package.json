@@ -14,9 +14,9 @@
 		"test": "pytest"
 	},
 	"devDependencies": {
-		"sst": "^2.24.22",
-		"aws-cdk-lib": "2.91.0",
-		"constructs": "10.2.69",
+		"sst": "^3.0.0",
+		"aws-cdk-lib": "^2.124.0",
+		"constructs": "^10.3.0",
 		"typescript": "^5.1.6"
 	},
 	"workspaces": [
