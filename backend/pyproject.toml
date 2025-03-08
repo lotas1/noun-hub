@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "functions"
+version = "0.1.0"
+description = "NounHub Backend Lambda Functions"
+requires-python = ">=3.11"
+dependencies = [
+    "requests==2.31.0",
+    "aws-lambda-powertools>=2.0.0"
+]
+
+[tool.ruff]
+select = ["E", "F", "B"]
+ignore = ["E501"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["functions"]
+
+[tool.hatch.build]
+artifacts = ["functions/*.py"]

@@ -1,1 +1,1 @@
-# Package initialization file
+from .handler import main

@@ -1,30 +1,44 @@
-import { SSTConfig } from "sst";
-import { API } from "./stacks/ApiStack";
-import { Auth } from "./stacks/AuthStack";
-import { Storage } from "./stacks/StorageStack";
+/// <reference path="./.sst/platform/config.d.ts" />
 
-export default {
-  config({
-    stage = "dev",
-    region = "us-east-1",
-  }) {
+export default $config({
+  app(input) {
     return {
-      name: "nounhub",
-      region,
+      name: "backend",
+      removal: input?.stage === "production" ? "retain" : "remove",
+      protect: ["production"].includes(input?.stage),
+      home: "aws",
+      providers: {
+        aws: {
+          region: "us-east-1"
+        }
+      }
     };
   },
-  stacks(app) {
-    // Set default runtime globally
-    app.setDefaultFunctionProps({
-      runtime: "python3.9",
-      copyFiles: [
-        { from: ".", to: "backend" }  // Copy entire backend directory
-      ]
-    });
+  async run() {
+    // const api = new sst.aws.ApiGatewayV2("MyApi");
+    // api.route("GET /", "packages/function/src/lambda.handler");
 
-    app
-      .stack(Storage)
-      .stack(Auth)
-      .stack(API);
-  },
-} satisfies SSTConfig;
+
+    // return {
+    //   api: api.url
+    // };
+
+    // // Show the API endpoint in the output
+    // console.log(api.url);
+
+    // new sst.aws.Function("MyFunctionGo", {
+    //   url: true,
+    //   runtime: "go",
+    //   handler: "./src"
+    // });
+
+    new sst.aws.Function("MyFunctionPython", {
+      url: true,
+      runtime: "python3.11",
+      handler: "./functions/handler.main",
+      python: {
+        container: true
+      }
+    });
+  }
+});
