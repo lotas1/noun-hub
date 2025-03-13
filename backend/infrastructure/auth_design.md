@@ -223,8 +223,5 @@ Response: {
    - Account creation: 3 per day per IP
 
 ## Next Steps
-1. Review and refine this design
-2. Set up Pulumi infrastructure
-3. Implement authentication flows
-4. Add monitoring and logging
-5. Implement security testing
+1. Add monitoring and logging
+2. Implement security testing (Ignore this for now)

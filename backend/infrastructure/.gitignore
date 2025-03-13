@@ -1,3 +1,23 @@
+# Build output
 /bin/
+
+# Dependencies
 /node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Pulumi specific
+Pulumi.*.yaml
+!Pulumi.yaml
+
+# Logs
+*.log
+
+# Local development
+.local
+.cache
+.temp
 
