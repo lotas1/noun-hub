@@ -90,6 +90,8 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleSignUp(ctx, request)
 	case "/auth/signin":
 		return h.handleSignIn(ctx, request)
+	case "/auth/confirm":  // Add this case
+		return h.handleConfirmSignUp(ctx, request)
 	case "/auth/google":
 		return h.googleOAuthHandler.HandleGoogleSignIn(ctx, request)
 	case "/auth/profile":
@@ -272,6 +274,39 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 	}, nil
 }
 
+func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+    var confirmReq ConfirmSignUpRequest
+    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+        return events.APIGatewayProxyResponse{
+            StatusCode: 400,
+            Body:       "Invalid request body",
+        }, nil
+    }
+
+    // Generate username from email (same as signup)
+    username := confirmReq.Email[:len(confirmReq.Email)-len("@"+confirmReq.Email[len(confirmReq.Email)-strings.LastIndex(confirmReq.Email, "@")-1:])]
+
+    // Confirm signup
+    _, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
+        ClientId: &h.clientID,
+        Username: &username,
+        ConfirmationCode: &confirmReq.Code,
+    })
+
+    if err != nil {
+        log.Printf("Error confirming signup: %v", err)
+        return events.APIGatewayProxyResponse{
+            StatusCode: 400,
+            Body:       "Invalid confirmation code",
+        }, nil
+    }
+
+    return events.APIGatewayProxyResponse{
+        StatusCode: 200,
+        Body:       "Email confirmed successfully",
+    }, nil
+}
+
 func getUsernameFromToken(token string) string {
 	// In a real implementation, this would decode the JWT and extract the username
 	// For now, we'll return a placeholder
@@ -284,4 +319,10 @@ func main() {
 		log.Fatal(err)
 	}
 	lambda.Start(handler.HandleRequest)
+}
+
+// Add this after your other request types
+type ConfirmSignUpRequest struct {
+    Email string `json:"email"`
+    Code  string `json:"code"`
 }

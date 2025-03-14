@@ -237,19 +237,42 @@ const googleAuthIntegration = new aws.apigateway.Integration("google-auth-integr
     uri: authFunction.invokeArn
 });
 
+// Create API Gateway resource and method for confirm signup
+const confirmSignupMethodResource = new aws.apigateway.Resource("confirm-signup-method-resource", {
+    restApi: api.id,
+    parentId: signupResource.id,  // Using signupResource (auth) as parent
+    pathPart: "confirm"
+});
+
+const confirmSignupMethod = new aws.apigateway.Method("confirm-signup-method", {
+    restApi: api.id,
+    resourceId: confirmSignupMethodResource.id,
+    httpMethod: "POST",
+    authorization: "NONE"
+});
+
+const confirmSignupIntegration = new aws.apigateway.Integration("confirm-signup-integration", {
+    restApi: api.id,
+    resourceId: confirmSignupMethodResource.id,
+    httpMethod: confirmSignupMethod.httpMethod,
+    type: "AWS_PROXY",
+    integrationHttpMethod: "POST",
+    uri: authFunction.invokeArn
+});
+
 // Add Lambda permission for API Gateway
 const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
   action: 'lambda:InvokeFunction',
   function: authFunction.arn,
   principal: 'apigateway.amazonaws.com',
-  sourceArn: pulumi.interpolate`${api.executionArn}/*/*`
+  sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
 
 // Update deployment dependencies
 const deployment = new aws.apigateway.Deployment('auth-deployment', {
   restApi: api.id,
   description: 'Authentication API deployment'
-}, { dependsOn: [signupIntegration, signinIntegration, googleAuthIntegration, lambdaPermission] });
+}, { dependsOn: [signupIntegration, signinIntegration, googleAuthIntegration, confirmSignupIntegration, lambdaPermission] });
 
 const stage = new aws.apigateway.Stage("auth-stage", {
     restApi: api.id,
