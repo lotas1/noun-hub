@@ -66,9 +66,10 @@ func NewAuthHandler() (*AuthHandler, error) {
 	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
 	userPoolID := os.Getenv("USER_POOL_ID")
 	clientID := os.Getenv("CLIENT_ID")
+	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
 
-	if userPoolID == "" || clientID == "" {
-		return nil, fmt.Errorf("USER_POOL_ID and CLIENT_ID environment variables must be set")
+	if userPoolID == "" || clientID == "" || googleClientID == "" {
+		return nil, fmt.Errorf("USER_POOL_ID, CLIENT_ID and GOOGLE_CLIENT_ID environment variables must be set")
 	}
 
 	return &AuthHandler{
@@ -78,7 +79,7 @@ func NewAuthHandler() (*AuthHandler, error) {
 		googleOAuthHandler: GoogleOAuthHandler{
 			cognitoClient: cognitoClient,
 			userPoolID:    userPoolID,
-			clientID:      clientID,
+			clientID:      googleClientID,
 		},
 	}, nil
 }

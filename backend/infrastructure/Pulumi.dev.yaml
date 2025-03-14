@@ -1,2 +1,3 @@
 config:
   aws:region: us-east-1
+  nounhub:googleClientId: 852318184489-s1t7vibfkfu91ggcflgi7bjl5qiarcl4.apps.googleusercontent.com

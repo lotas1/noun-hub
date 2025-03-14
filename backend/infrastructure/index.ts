@@ -22,8 +22,8 @@ const userPool = new aws.cognito.UserPool("auth-userpool", {
         {
             name: "auth_method",
             attributeDataType: "String",
-            required: true,
-            mutable: false,
+            required: false,
+            mutable: true,
             stringAttributeConstraints: {
                 minLength: "1",
                 maxLength: "10"
@@ -151,12 +151,12 @@ const authFunction = new aws.lambda.Function("auth-function", {
     code: new pulumi.asset.AssetArchive({
         "bootstrap": new pulumi.asset.FileAsset("../lambda/auth/bootstrap")
     }),
+    // Environment variables for Lambda function
     environment: {
         variables: {
             USER_POOL_ID: userPool.id,
             CLIENT_ID: userPoolClient.id,
-            GOOGLE_CLIENT_ID: config.requireSecret("googleClientId"),
-            GOOGLE_CLIENT_SECRET: config.requireSecret("googleClientSecret")
+            GOOGLE_CLIENT_ID: config.require("googleClientId")
         }
     },
     tags: commonTags
@@ -166,19 +166,25 @@ const authFunction = new aws.lambda.Function("auth-function", {
 const signupResource = new aws.apigateway.Resource("signup-resource", {
     restApi: api.id,
     parentId: api.rootResourceId,
+    pathPart: "auth"
+});
+
+const signupMethodResource = new aws.apigateway.Resource("signup-method-resource", {
+    restApi: api.id,
+    parentId: signupResource.id,
     pathPart: "signup"
 });
 
 const signupMethod = new aws.apigateway.Method("signup-method", {
     restApi: api.id,
-    resourceId: signupResource.id,
+    resourceId: signupMethodResource.id,
     httpMethod: "POST",
     authorization: "NONE"
 });
 
 const signupIntegration = new aws.apigateway.Integration("signup-integration", {
     restApi: api.id,
-    resourceId: signupResource.id,
+    resourceId: signupMethodResource.id,
     httpMethod: signupMethod.httpMethod,
     type: "AWS_PROXY",
     integrationHttpMethod: "POST",
@@ -186,22 +192,22 @@ const signupIntegration = new aws.apigateway.Integration("signup-integration", {
 });
 
 // Create API Gateway resource and method for signin
-const signinResource = new aws.apigateway.Resource("signin-resource", {
+const signinMethodResource = new aws.apigateway.Resource("signin-method-resource", {
     restApi: api.id,
-    parentId: api.rootResourceId,
+    parentId: signupResource.id,
     pathPart: "signin"
 });
 
 const signinMethod = new aws.apigateway.Method("signin-method", {
     restApi: api.id,
-    resourceId: signinResource.id,
+    resourceId: signinMethodResource.id,
     httpMethod: "POST",
     authorization: "NONE"
 });
 
 const signinIntegration = new aws.apigateway.Integration("signin-integration", {
     restApi: api.id,
-    resourceId: signinResource.id,
+    resourceId: signinMethodResource.id,
     httpMethod: signinMethod.httpMethod,
     type: "AWS_PROXY",
     integrationHttpMethod: "POST",
@@ -209,33 +215,41 @@ const signinIntegration = new aws.apigateway.Integration("signin-integration", {
 });
 
 // Create API Gateway resource and method for Google sign-in
-const googleAuthResource = new aws.apigateway.Resource("google-auth-resource", {
+const googleAuthMethodResource = new aws.apigateway.Resource("google-auth-method-resource", {
     restApi: api.id,
-    parentId: api.rootResourceId,
+    parentId: signupResource.id,
     pathPart: "google"
 });
 
 const googleAuthMethod = new aws.apigateway.Method("google-auth-method", {
     restApi: api.id,
-    resourceId: googleAuthResource.id,
+    resourceId: googleAuthMethodResource.id,
     httpMethod: "POST",
     authorization: "NONE"
 });
 
 const googleAuthIntegration = new aws.apigateway.Integration("google-auth-integration", {
     restApi: api.id,
-    resourceId: googleAuthResource.id,
+    resourceId: googleAuthMethodResource.id,
     httpMethod: googleAuthMethod.httpMethod,
     type: "AWS_PROXY",
     integrationHttpMethod: "POST",
     uri: authFunction.invokeArn
 });
 
+// Add Lambda permission for API Gateway
+const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
+  action: 'lambda:InvokeFunction',
+  function: authFunction.arn,
+  principal: 'apigateway.amazonaws.com',
+  sourceArn: pulumi.interpolate`${api.executionArn}/*/*`
+});
+
 // Update deployment dependencies
-const deployment = new aws.apigateway.Deployment("auth-deployment", {
-    restApi: api.id,
-    description: "Authentication API deployment"
-}, { dependsOn: [signupIntegration, signinIntegration, googleAuthIntegration] });
+const deployment = new aws.apigateway.Deployment('auth-deployment', {
+  restApi: api.id,
+  description: 'Authentication API deployment'
+}, { dependsOn: [signupIntegration, signinIntegration, googleAuthIntegration, lambdaPermission] });
 
 const stage = new aws.apigateway.Stage("auth-stage", {
     restApi: api.id,
@@ -244,14 +258,14 @@ const stage = new aws.apigateway.Stage("auth-stage", {
     tags: commonTags
 });
 
-// Export the API endpoint
-export const apiEndpoint = pulumi.interpolate`${api.executionArn}/${stack}`;
+// Update the API endpoint export
+export const apiEndpoint = pulumi.interpolate`https://${api.id}.execute-api.${aws.config.region}.amazonaws.com/${stack}/auth`;
 
 // Create IAM role policy for Lambda
 const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
     name: `nounhub-auth-lambda-role-policy-${stack}`,
-    role: authFunction.role,
-    policy: JSON.stringify({
+    role: authFunction.role.apply(role => role.split("/").pop() as string),
+    policy: pulumi.output({
         Version: "2012-10-17",
         Statement: [
             {
@@ -279,5 +293,5 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                 Resource: "arn:aws:logs:*:*:*"
             }
         ]
-    })
+    }).apply(policy => JSON.stringify(policy))
 });
