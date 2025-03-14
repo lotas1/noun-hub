@@ -57,6 +57,16 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ConfirmForgotPasswordRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
 func NewAuthHandler() (*AuthHandler, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -90,7 +100,7 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleSignUp(ctx, request)
 	case "/auth/signin":
 		return h.handleSignIn(ctx, request)
-	case "/auth/confirm":  // Add this case
+	case "/auth/confirm": // Add this case
 		return h.handleConfirmSignUp(ctx, request)
 	case "/auth/google":
 		return h.googleOAuthHandler.HandleGoogleSignIn(ctx, request)
@@ -98,6 +108,12 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleGetProfile(ctx, request)
 	case "/auth/refresh":
 		return h.handleTokenRefresh(ctx, request)
+	case "/auth/resend-confirmation":
+		return h.handleResendConfirmationCode(ctx, request)
+	case "/auth/forgot-password":
+		return h.handleForgotPassword(ctx, request)
+	case "/auth/confirm-forgot-password":
+		return h.handleConfirmForgotPassword(ctx, request)
 	default:
 		return events.APIGatewayProxyResponse{
 			StatusCode: 404,
@@ -115,13 +131,10 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 		}, nil
 	}
 
-	// Generate username from email
-	username := signUpReq.Email[:len(signUpReq.Email)-len("@"+signUpReq.Email[len(signUpReq.Email)-strings.LastIndex(signUpReq.Email, "@")-1:])]
-
-	// Sign up the user
+	// Use email as username directly
 	_, err := h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 		ClientId: &h.clientID,
-		Username: &username,
+		Username: &signUpReq.Email, // Use email as username
 		Password: &signUpReq.Password,
 		UserAttributes: []types.AttributeType{
 			{
@@ -158,8 +171,8 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 		}, nil
 	}
 
-	// Initiate auth
-	result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+	// Use email directly as username
+	authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
 		AuthFlow: types.AuthFlowTypeUserPasswordAuth,
 		ClientId: &h.clientID,
 		AuthParameters: map[string]string{
@@ -177,9 +190,9 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 	}
 
 	response := map[string]interface{}{
-		"access_token":  *result.AuthenticationResult.AccessToken,
-		"refresh_token": *result.AuthenticationResult.RefreshToken,
-		"expires_in":    result.AuthenticationResult.ExpiresIn,
+		"access_token":  *authResult.AuthenticationResult.AccessToken,
+		"refresh_token": *authResult.AuthenticationResult.RefreshToken,
+		"expires_in":    authResult.AuthenticationResult.ExpiresIn,
 	}
 
 	responseJSON, _ := json.Marshal(response)
@@ -275,36 +288,33 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-    var confirmReq ConfirmSignUpRequest
-    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-        return events.APIGatewayProxyResponse{
-            StatusCode: 400,
-            Body:       "Invalid request body",
-        }, nil
-    }
+	var confirmReq ConfirmSignUpRequest
+	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid request body",
+		}, nil
+	}
 
-    // Generate username from email (same as signup)
-    username := confirmReq.Email[:len(confirmReq.Email)-len("@"+confirmReq.Email[len(confirmReq.Email)-strings.LastIndex(confirmReq.Email, "@")-1:])]
+	// Use email directly as username
+	_, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
+		ClientId:         &h.clientID,
+		Username:         &confirmReq.Email,
+		ConfirmationCode: &confirmReq.Code,
+	})
 
-    // Confirm signup
-    _, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
-        ClientId: &h.clientID,
-        Username: &username,
-        ConfirmationCode: &confirmReq.Code,
-    })
+	if err != nil {
+		log.Printf("Error confirming signup: %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid confirmation code",
+		}, nil
+	}
 
-    if err != nil {
-        log.Printf("Error confirming signup: %v", err)
-        return events.APIGatewayProxyResponse{
-            StatusCode: 400,
-            Body:       "Invalid confirmation code",
-        }, nil
-    }
-
-    return events.APIGatewayProxyResponse{
-        StatusCode: 200,
-        Body:       "Email confirmed successfully",
-    }, nil
+	return events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Body:       "Email confirmed successfully",
+	}, nil
 }
 
 func getUsernameFromToken(token string) string {
@@ -323,6 +333,97 @@ func main() {
 
 // Add this after your other request types
 type ConfirmSignUpRequest struct {
-    Email string `json:"email"`
-    Code  string `json:"code"`
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+// Add this new handler function
+func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	var forgotReq ForgotPasswordRequest
+	if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid request body",
+		}, nil
+	}
+
+	_, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
+		ClientId: &h.clientID,
+		Username: &forgotReq.Email,
+	})
+
+	if err != nil {
+		log.Printf("Error initiating password reset: %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Body:       "Error initiating password reset",
+		}, nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Body:       "Password reset code sent successfully",
+	}, nil
+}
+
+func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	var confirmReq ConfirmForgotPasswordRequest
+	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid request body",
+		}, nil
+	}
+
+	_, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
+		ClientId:         &h.clientID,
+		Username:         &confirmReq.Email,
+		Password:         &confirmReq.NewPassword,
+		ConfirmationCode: &confirmReq.Code,
+	})
+
+	if err != nil {
+		log.Printf("Error confirming password reset: %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid confirmation code or password",
+		}, nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Body:       "Password reset successfully",
+	}, nil
+}
+
+func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	var resendReq struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 400,
+			Body:       "Invalid request body",
+		}, nil
+	}
+
+	// Use email directly as username
+	_, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
+		ClientId: &h.clientID,
+		Username: &resendReq.Email,
+	})
+
+	if err != nil {
+		log.Printf("Error resending confirmation code: %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Body:       "Error resending confirmation code",
+		}, nil
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Body:       "Confirmation code resent successfully",
+	}, nil
 }

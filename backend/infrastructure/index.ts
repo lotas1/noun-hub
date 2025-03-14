@@ -1,3 +1,7 @@
+//------------------------------------------------------------
+// 1) Basic Configuration and Imports
+//------------------------------------------------------------
+
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
@@ -12,6 +16,10 @@ const commonTags = {
     Component: "auth",
     ManagedBy: "pulumi"
 };
+
+//------------------------------------------------------------
+// 2) Cognito User Pool Setup
+//------------------------------------------------------------
 
 // Create Cognito User Pool
 const userPool = new aws.cognito.UserPool("auth-userpool", {
@@ -122,12 +130,20 @@ const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
 export const userPoolId = userPool.id;
 export const userPoolClientId = userPoolClient.id;
 
+//------------------------------------------------------------
+// 3) API Gateway Configuration
+//------------------------------------------------------------
+
 // Create API Gateway
 const api = new aws.apigateway.RestApi("auth-api", {
     name: `nounhub-auth-api-${stack}`,
     description: "NounHub Authentication API",
     tags: commonTags
 });
+
+//------------------------------------------------------------
+// 4) Lambda Function Setup
+//------------------------------------------------------------
 
 // Create Lambda function for authentication
 const authFunction = new aws.lambda.Function("auth-function", {
@@ -149,7 +165,24 @@ const authFunction = new aws.lambda.Function("auth-function", {
         })
     }).arn,
     code: new pulumi.asset.AssetArchive({
-        "bootstrap": new pulumi.asset.FileAsset("../lambda/auth/bootstrap")
+        ".": new pulumi.asset.FileArchive(
+            (() => {
+                const { execSync } = require("child_process");
+                const path = require("path");
+                
+                // Get the absolute path to the auth directory
+                const authDir = path.join(__dirname, "../lambda/auth");
+                
+                // Execute build script
+                execSync("chmod +x build.sh && ./build.sh", {
+                    cwd: authDir,
+                    stdio: "inherit"
+                });
+                
+                // Return the path to the compiled binary
+                return authDir;
+            })()
+        )
     }),
     // Environment variables for Lambda function
     environment: {
@@ -260,6 +293,75 @@ const confirmSignupIntegration = new aws.apigateway.Integration("confirm-signup-
     uri: authFunction.invokeArn
 });
 
+// Create API Gateway resource and method for resend confirmation
+const resendConfirmationMethodResource = new aws.apigateway.Resource("resend-confirmation-method-resource", {
+    restApi: api.id,
+    parentId: signupResource.id,  // Using signupResource (auth) as parent
+    pathPart: "resend-confirmation"
+});
+
+const resendConfirmationMethod = new aws.apigateway.Method("resend-confirmation-method", {
+    restApi: api.id,
+    resourceId: resendConfirmationMethodResource.id,
+    httpMethod: "POST",
+    authorization: "NONE"
+});
+
+const resendConfirmationIntegration = new aws.apigateway.Integration("resend-confirmation-integration", {
+    restApi: api.id,
+    resourceId: resendConfirmationMethodResource.id,
+    httpMethod: resendConfirmationMethod.httpMethod,
+    type: "AWS_PROXY",
+    integrationHttpMethod: "POST",
+    uri: authFunction.invokeArn
+});
+
+// Create API Gateway resource and method for forgot password
+const forgotPasswordMethodResource = new aws.apigateway.Resource("forgot-password-method-resource", {
+    restApi: api.id,
+    parentId: signupResource.id,
+    pathPart: "forgot-password"
+});
+
+const forgotPasswordMethod = new aws.apigateway.Method("forgot-password-method", {
+    restApi: api.id,
+    resourceId: forgotPasswordMethodResource.id,
+    httpMethod: "POST",
+    authorization: "NONE"
+});
+
+const forgotPasswordIntegration = new aws.apigateway.Integration("forgot-password-integration", {
+    restApi: api.id,
+    resourceId: forgotPasswordMethodResource.id,
+    httpMethod: forgotPasswordMethod.httpMethod,
+    type: "AWS_PROXY",
+    integrationHttpMethod: "POST",
+    uri: authFunction.invokeArn
+});
+
+// Create API Gateway resource and method for confirm forgot password
+const confirmForgotPasswordMethodResource = new aws.apigateway.Resource("confirm-forgot-password-method-resource", {
+    restApi: api.id,
+    parentId: signupResource.id,
+    pathPart: "confirm-forgot-password"
+});
+
+const confirmForgotPasswordMethod = new aws.apigateway.Method("confirm-forgot-password-method", {
+    restApi: api.id,
+    resourceId: confirmForgotPasswordMethodResource.id,
+    httpMethod: "POST",
+    authorization: "NONE"
+});
+
+const confirmForgotPasswordIntegration = new aws.apigateway.Integration("confirm-forgot-password-integration", {
+    restApi: api.id,
+    resourceId: confirmForgotPasswordMethodResource.id,
+    httpMethod: confirmForgotPasswordMethod.httpMethod,
+    type: "AWS_PROXY",
+    integrationHttpMethod: "POST",
+    uri: authFunction.invokeArn
+});
+
 // Add Lambda permission for API Gateway
 const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
   action: 'lambda:InvokeFunction',
@@ -284,6 +386,10 @@ const stage = new aws.apigateway.Stage("auth-stage", {
 // Update the API endpoint export
 export const apiEndpoint = pulumi.interpolate`https://${api.id}.execute-api.${aws.config.region}.amazonaws.com/${stack}/auth`;
 
+//------------------------------------------------------------
+// 5) IAM Role and Policy Configuration
+//------------------------------------------------------------
+
 // Create IAM role policy for Lambda
 const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
     name: `nounhub-auth-lambda-role-policy-${stack}`,
@@ -302,7 +408,8 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:ConfirmForgotPassword",
                     "cognito-idp:GetUser",
                     "cognito-idp:UpdateUserAttributes",
-                    "cognito-idp:VerifyUserAttribute"
+                    "cognito-idp:VerifyUserAttribute",
+                    "cognito-idp:ResendConfirmationCode" 
                 ],
                 Resource: userPool.arn
             },

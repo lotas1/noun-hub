@@ -210,8 +210,8 @@ Response: {
 ## Security Considerations
 
 1. **Token Management**
-   - Short-lived access tokens (1 hour)
-   - Longer-lived refresh tokens (7 days)
+   - Short-lived access tokens (24 hours)
+   - Longer-lived refresh tokens (365 days)
    - Token rotation on refresh
 
 2. **Password Policy**
