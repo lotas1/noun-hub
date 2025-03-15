@@ -217,10 +217,6 @@ Response: {
 2. **Password Policy**
    - Minimum 6 characters
 
-3. **Rate Limiting**
-   - Login attempts: 5 per minute
-   - Password reset: 3 per hour
-   - Account creation: 3 per day per IP
 
 ## Next Steps
 1. Add monitoring and logging

@@ -22,11 +22,18 @@ type GoogleOAuthHandler struct {
 	clientID      string
 }
 
-func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// TODO: Implement Google OAuth flow
-	return events.APIGatewayProxyResponse{
+func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	response := APIResponse{
+		Success: false,
+		Error:   "Google OAuth not implemented yet",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 501,
-		Body:       "Google OAuth not implemented yet",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
@@ -94,13 +101,24 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}, nil
 }
 
-func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	switch request.Path {
+func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Add debug logging
+	log.Printf("Received request path: %s", request.RequestContext.HTTP.Path)
+	log.Printf("Raw path: %s", request.RawPath)
+
+	// Remove stage prefix from path
+	path := request.RequestContext.HTTP.Path
+	if parts := strings.Split(path, "/"); len(parts) > 2 {
+		// Reconstruct the path without the stage name
+		path = "/" + strings.Join(parts[2:], "/")
+	}
+
+	switch path {
 	case "/auth/signup":
 		return h.handleSignUp(ctx, request)
 	case "/auth/signin":
 		return h.handleSignIn(ctx, request)
-	case "/auth/confirm": // Add this case
+	case "/auth/confirm":
 		return h.handleConfirmSignUp(ctx, request)
 	case "/auth/google":
 		return h.googleOAuthHandler.HandleGoogleSignIn(ctx, request)
@@ -114,27 +132,53 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleForgotPassword(ctx, request)
 	case "/auth/confirm-forgot-password":
 		return h.handleConfirmForgotPassword(ctx, request)
+	// In HandleRequest function, update the default case
 	default:
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Not Found. Path received: %s", path),
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 404,
-			Body:       "Not Found",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 }
 
-func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+// Add this type at the top with other type definitions
+type APIResponse struct {
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// Example of how to modify a handler (showing signup handler as example):
+func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signUpReq SignUpRequest
 	if err := json.Unmarshal([]byte(request.Body), &signUpReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
 	// Use email as username directly
 	_, err := h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 		ClientId: &h.clientID,
-		Username: &signUpReq.Email, // Use email as username
+		Username: &signUpReq.Email,
 		Password: &signUpReq.Password,
 		UserAttributes: []types.AttributeType{
 			{
@@ -150,24 +194,53 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 
 	if err != nil {
 		log.Printf("Error signing up user: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Error signing up user",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
-			Body:       "Error signing up user",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	// Update the success response to use APIResponse format
+	response := APIResponse{
+		Success: true,
+		Message: "User signed up successfully",
+		Data: map[string]interface{}{
+			"email": signUpReq.Email,
+		},
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       "User signed up successfully",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+// Example updates for handleSignIn:
+func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signInReq SignInRequest
 	if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -183,32 +256,53 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 
 	if err != nil {
 		log.Printf("Error signing in user: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid credentials",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 401,
-			Body:       "Invalid credentials",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	response := map[string]interface{}{
-		"access_token":  *authResult.AuthenticationResult.AccessToken,
-		"refresh_token": *authResult.AuthenticationResult.RefreshToken,
-		"expires_in":    authResult.AuthenticationResult.ExpiresIn,
+	response := APIResponse{
+		Success: true,
+		Message: "Sign in successful",
+		Data: map[string]interface{}{
+			"access_token":  *authResult.AuthenticationResult.AccessToken,
+			"refresh_token": *authResult.AuthenticationResult.RefreshToken,
+			"expires_in":    authResult.AuthenticationResult.ExpiresIn,
+		},
 	}
-
-	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       string(responseJSON),
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	// Extract user from token
-	token := strings.TrimPrefix(request.Headers["Authorization"], "Bearer ")
+func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Unauthorized",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 401,
-			Body:       "Unauthorized",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -219,9 +313,17 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 	})
 	if err != nil {
 		log.Printf("Error getting user profile: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Error retrieving user profile",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
-			Body:       "Error retrieving user profile",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -243,18 +345,29 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 	}
 
 	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
 		Body:       string(responseJSON),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var refreshReq RefreshTokenRequest
 	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -269,7 +382,7 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 
 	if err != nil {
 		log.Printf("Error refreshing token: %v", err)
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 401,
 			Body:       "Invalid refresh token",
 		}, nil
@@ -281,18 +394,29 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 	}
 
 	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
 		Body:       string(responseJSON),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmSignUpRequest
 	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -305,15 +429,32 @@ func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.AP
 
 	if err != nil {
 		log.Printf("Error confirming signup: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid confirmation code",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid confirmation code",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	// In handleSignUp, update the success response:
+	response := APIResponse{
+		Success: true,
+		Message: "User signed up successfully",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       "Email confirmed successfully",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
@@ -338,10 +479,10 @@ type ConfirmSignUpRequest struct {
 }
 
 // Add this new handler function
-func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var forgotReq ForgotPasswordRequest
 	if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
 			Body:       "Invalid request body",
 		}, nil
@@ -354,24 +495,48 @@ func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.A
 
 	if err != nil {
 		log.Printf("Error initiating password reset: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Error initiating password reset",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
-			Body:       "Error initiating password reset",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	response := APIResponse{
+		Success: true,
+		Message: "Password reset code sent successfully",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       "Password reset code sent successfully",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmForgotPasswordRequest
 	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -384,27 +549,51 @@ func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request e
 
 	if err != nil {
 		log.Printf("Error confirming password reset: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid confirmation code or password",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid confirmation code or password",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	response := APIResponse{
+		Success: true,
+		Message: "Password reset successfully",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       "Password reset successfully",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
-func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var resendReq struct {
 		Email string `json:"email"`
 	}
 
 	if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Invalid request body",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
-			Body:       "Invalid request body",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
@@ -415,15 +604,30 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 	})
 
 	if err != nil {
-		log.Printf("Error resending confirmation code: %v", err)
-		return events.APIGatewayProxyResponse{
+		response := APIResponse{
+			Success: false,
+			Error:   "Error resending confirmation code",
+		}
+		jsonResponse, _ := json.Marshal(response)
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
-			Body:       "Error resending confirmation code",
+			Body:       string(jsonResponse),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
 		}, nil
 	}
 
-	return events.APIGatewayProxyResponse{
+	response := APIResponse{
+		Success: true,
+		Message: "Confirmation code resent successfully",
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
-		Body:       "Confirmation code resent successfully",
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }

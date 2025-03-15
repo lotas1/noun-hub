@@ -131,18 +131,7 @@ export const userPoolId = userPool.id;
 export const userPoolClientId = userPoolClient.id;
 
 //------------------------------------------------------------
-// 3) API Gateway Configuration
-//------------------------------------------------------------
-
-// Create API Gateway
-const api = new aws.apigateway.RestApi("auth-api", {
-    name: `nounhub-auth-api-${stack}`,
-    description: "NounHub Authentication API",
-    tags: commonTags
-});
-
-//------------------------------------------------------------
-// 4) Lambda Function Setup
+// 3) Lambda Function Setup
 //------------------------------------------------------------
 
 // Create Lambda function for authentication
@@ -195,196 +184,73 @@ const authFunction = new aws.lambda.Function("auth-function", {
     tags: commonTags
 });
 
-// Create API Gateway resource and method for signup
-const signupResource = new aws.apigateway.Resource("signup-resource", {
-    restApi: api.id,
-    parentId: api.rootResourceId,
-    pathPart: "auth"
+//------------------------------------------------------------
+// 4) API Gateway Configuration
+//------------------------------------------------------------
+
+// Create HTTP API Gateway
+const api = new aws.apigatewayv2.Api("auth-api", {
+    name: `nounhub-auth-api-${stack}`,
+    protocolType: "HTTP",
+    corsConfiguration: {
+        allowOrigins: ["*"],
+        allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowHeaders: ["Content-Type", "Authorization"],
+        maxAge: 300
+    },
+    tags: commonTags
 });
 
-const signupMethodResource = new aws.apigateway.Resource("signup-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,
-    pathPart: "signup"
+// Create Lambda integration for HTTP API
+const integration = new aws.apigatewayv2.Integration("auth-lambda-integration", {
+    apiId: api.id,
+    integrationType: "AWS_PROXY",
+    integrationUri: authFunction.invokeArn,
+    integrationMethod: "POST",
+    payloadFormatVersion: "2.0",
+    timeoutMilliseconds: 30000,
 });
 
-const signupMethod = new aws.apigateway.Method("signup-method", {
-    restApi: api.id,
-    resourceId: signupMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
+// Create routes for all auth endpoints
+const routes = [
+    { path: "/auth/signup", method: "POST" },
+    { path: "/auth/signin", method: "POST" },
+    { path: "/auth/confirm", method: "POST" },
+    { path: "/auth/google", method: "POST" },
+    { path: "/auth/profile", method: "GET" },
+    { path: "/auth/refresh", method: "POST" },
+    { path: "/auth/resend-confirmation", method: "POST" },
+    { path: "/auth/forgot-password", method: "POST" },
+    { path: "/auth/confirm-forgot-password", method: "POST" }
+];
+
+// Create routes
+routes.forEach((route, index) => {
+    new aws.apigatewayv2.Route(`auth-route-${index}`, {
+        apiId: api.id,
+        routeKey: `${route.method} ${route.path}`,
+        target: pulumi.interpolate`integrations/${integration.id}`
+    });
 });
 
-const signupIntegration = new aws.apigateway.Integration("signup-integration", {
-    restApi: api.id,
-    resourceId: signupMethodResource.id,
-    httpMethod: signupMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for signin
-const signinMethodResource = new aws.apigateway.Resource("signin-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,
-    pathPart: "signin"
-});
-
-const signinMethod = new aws.apigateway.Method("signin-method", {
-    restApi: api.id,
-    resourceId: signinMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const signinIntegration = new aws.apigateway.Integration("signin-integration", {
-    restApi: api.id,
-    resourceId: signinMethodResource.id,
-    httpMethod: signinMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for Google sign-in
-const googleAuthMethodResource = new aws.apigateway.Resource("google-auth-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,
-    pathPart: "google"
-});
-
-const googleAuthMethod = new aws.apigateway.Method("google-auth-method", {
-    restApi: api.id,
-    resourceId: googleAuthMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const googleAuthIntegration = new aws.apigateway.Integration("google-auth-integration", {
-    restApi: api.id,
-    resourceId: googleAuthMethodResource.id,
-    httpMethod: googleAuthMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for confirm signup
-const confirmSignupMethodResource = new aws.apigateway.Resource("confirm-signup-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,  // Using signupResource (auth) as parent
-    pathPart: "confirm"
-});
-
-const confirmSignupMethod = new aws.apigateway.Method("confirm-signup-method", {
-    restApi: api.id,
-    resourceId: confirmSignupMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const confirmSignupIntegration = new aws.apigateway.Integration("confirm-signup-integration", {
-    restApi: api.id,
-    resourceId: confirmSignupMethodResource.id,
-    httpMethod: confirmSignupMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for resend confirmation
-const resendConfirmationMethodResource = new aws.apigateway.Resource("resend-confirmation-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,  // Using signupResource (auth) as parent
-    pathPart: "resend-confirmation"
-});
-
-const resendConfirmationMethod = new aws.apigateway.Method("resend-confirmation-method", {
-    restApi: api.id,
-    resourceId: resendConfirmationMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const resendConfirmationIntegration = new aws.apigateway.Integration("resend-confirmation-integration", {
-    restApi: api.id,
-    resourceId: resendConfirmationMethodResource.id,
-    httpMethod: resendConfirmationMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for forgot password
-const forgotPasswordMethodResource = new aws.apigateway.Resource("forgot-password-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,
-    pathPart: "forgot-password"
-});
-
-const forgotPasswordMethod = new aws.apigateway.Method("forgot-password-method", {
-    restApi: api.id,
-    resourceId: forgotPasswordMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const forgotPasswordIntegration = new aws.apigateway.Integration("forgot-password-integration", {
-    restApi: api.id,
-    resourceId: forgotPasswordMethodResource.id,
-    httpMethod: forgotPasswordMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
-});
-
-// Create API Gateway resource and method for confirm forgot password
-const confirmForgotPasswordMethodResource = new aws.apigateway.Resource("confirm-forgot-password-method-resource", {
-    restApi: api.id,
-    parentId: signupResource.id,
-    pathPart: "confirm-forgot-password"
-});
-
-const confirmForgotPasswordMethod = new aws.apigateway.Method("confirm-forgot-password-method", {
-    restApi: api.id,
-    resourceId: confirmForgotPasswordMethodResource.id,
-    httpMethod: "POST",
-    authorization: "NONE"
-});
-
-const confirmForgotPasswordIntegration = new aws.apigateway.Integration("confirm-forgot-password-integration", {
-    restApi: api.id,
-    resourceId: confirmForgotPasswordMethodResource.id,
-    httpMethod: confirmForgotPasswordMethod.httpMethod,
-    type: "AWS_PROXY",
-    integrationHttpMethod: "POST",
-    uri: authFunction.invokeArn
+// Create stage
+const stage = new aws.apigatewayv2.Stage("auth-stage", {
+    apiId: api.id,
+    name: stack,
+    autoDeploy: true,
+    tags: commonTags
 });
 
 // Add Lambda permission for API Gateway
 const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
-  action: 'lambda:InvokeFunction',
-  function: authFunction.arn,
-  principal: 'apigateway.amazonaws.com',
-  sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
-});
-
-// Update deployment dependencies
-const deployment = new aws.apigateway.Deployment('auth-deployment', {
-  restApi: api.id,
-  description: 'Authentication API deployment'
-}, { dependsOn: [signupIntegration, signinIntegration, googleAuthIntegration, confirmSignupIntegration, lambdaPermission] });
-
-const stage = new aws.apigateway.Stage("auth-stage", {
-    restApi: api.id,
-    deployment: deployment.id,
-    stageName: stack,
-    tags: commonTags
+    action: 'lambda:InvokeFunction',
+    function: authFunction.arn,
+    principal: 'apigateway.amazonaws.com',
+    sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
 
 // Update the API endpoint export
-export const apiEndpoint = pulumi.interpolate`https://${api.id}.execute-api.${aws.config.region}.amazonaws.com/${stack}/auth`;
+export const apiEndpoint = pulumi.interpolate`${api.apiEndpoint}/${stack}`;
 
 //------------------------------------------------------------
 // 5) IAM Role and Policy Configuration

@@ -39,14 +39,14 @@ func NewGoogleOAuthHandler(cognitoClient *cognitoidentityprovider.Client, userPo
 	}
 }
 
-func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract Google OAuth token from request
 	var requestBody struct {
 		Token string `json:"token"`
 	}
 
 	if err := json.Unmarshal([]byte(request.Body), &requestBody); err != nil {
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 400,
 			Body:       "Invalid request body",
 		}, nil
@@ -55,7 +55,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 	// Get user info from Google
 	userInfo, err := h.getGoogleUserInfo(requestBody.Token)
 	if err != nil {
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 401,
 			Body:       "Invalid Google token",
 		}, nil
@@ -64,7 +64,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 	// Check if user exists
 	existingUser, err := h.findUserByEmail(ctx, userInfo.Email)
 	if err != nil && !errors.Is(err, &types.UserNotFoundException{}) {
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       "Error checking user existence",
 		}, nil
@@ -74,7 +74,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 		// Link Google auth to existing account
 		err = h.linkGoogleAuth(ctx, existingUser.Username, userInfo)
 		if err != nil {
-			return events.APIGatewayProxyResponse{
+			return events.APIGatewayV2HTTPResponse{
 				StatusCode: 500,
 				Body:       "Error linking Google account",
 			}, nil
@@ -83,7 +83,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 		// Create new user
 		err = h.createGoogleUser(ctx, userInfo)
 		if err != nil {
-			return events.APIGatewayProxyResponse{
+			return events.APIGatewayV2HTTPResponse{
 				StatusCode: 500,
 				Body:       "Error creating user",
 			}, nil
@@ -101,7 +101,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 	})
 
 	if err != nil {
-		return events.APIGatewayProxyResponse{
+		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       "Error initiating auth session",
 		}, nil
@@ -114,9 +114,12 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 	}
 
 	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayProxyResponse{
+	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 200,
 		Body:       string(responseJSON),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
 	}, nil
 }
 
