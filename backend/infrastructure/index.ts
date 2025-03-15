@@ -17,6 +17,15 @@ const commonTags = {
     ManagedBy: "pulumi"
 };
 
+// Domain configuration
+const domainName = "nounhub.org";
+
+// Create AWS provider for us-east-1 region specifically for ACM certificates
+// This is required because ACM certificates used with CloudFront must be in us-east-1
+const usEast1Provider = new aws.Provider("us-east-1-provider", {
+    region: "us-east-1",
+});
+
 //------------------------------------------------------------
 // 2) Cognito User Pool Setup
 //------------------------------------------------------------
@@ -112,8 +121,8 @@ const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
     generateSecret: false,
 
     // Callback URLs
-    callbackUrls: [`https://api.nounhub.com/${stack}/auth/callback`],
-    logoutUrls: [`https://api.nounhub.com/${stack}/auth/logout`],
+    callbackUrls: [`https://nounhub.org/${stack}/auth/callback`],
+    logoutUrls: [`https://nounhub.org/${stack}/auth/logout`],
 
     // Token revocation
     enableTokenRevocation: true,
@@ -249,7 +258,47 @@ const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
     sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
 
-// Update the API endpoint export
+//------------------------------------------------------------
+// 6) Custom Domain Configuration
+//------------------------------------------------------------
+
+// Commenting out custom domain configuration for now
+/*
+// Use an existing certificate (after manual validation)
+const certificate = aws.acm.Certificate.get("existing-certificate", 
+    config.require("certificateArn"),  // Get the ARN from Pulumi config
+    {}, 
+    { provider: usEast1Provider }
+);
+
+// Create API Gateway domain name with the validated certificate
+const apiDomainName = new aws.apigatewayv2.DomainName("api-domain", {
+    domainName: domainName,
+    domainNameConfiguration: {
+        certificateArn: certificate.arn,
+        endpointType: "REGIONAL",
+        securityPolicy: "TLS_1_2"
+    },
+    tags: commonTags
+});
+
+// Create API mapping to connect the API to the custom domain
+const apiMapping = new aws.apigatewayv2.ApiMapping("api-mapping", {
+    apiId: api.id,
+    domainName: apiDomainName.id,
+    stage: stage.id,
+    apiMappingKey: stack, // This creates a base path matching your stack name
+});
+
+// Export the domain configuration details
+export const apiDomainNameTargetDomainName = apiDomainName.domainNameConfiguration.targetDomainName;
+export const apiDomainNameHostedZoneId = apiDomainName.domainNameConfiguration.hostedZoneId;
+
+// Update the API endpoint export to include both the default and custom domain
+export const customDomainEndpoint = pulumi.interpolate`https://${domainName}/${stack}`;
+*/
+
+// Export only the default API Gateway endpoint
 export const apiEndpoint = pulumi.interpolate`${api.apiEndpoint}/${stack}`;
 
 //------------------------------------------------------------

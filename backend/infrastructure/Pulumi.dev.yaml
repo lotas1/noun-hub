@@ -1,3 +1,4 @@
 config:
   aws:region: us-east-1
   nounhub:googleClientId: 852318184489-s1t7vibfkfu91ggcflgi7bjl5qiarcl4.apps.googleusercontent.com
+  nounhub:certificateArn: arn:aws:acm:us-east-1:590183965738:certificate/e1de60ce-6942-4590-9f68-ae7817b51e2d
