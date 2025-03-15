@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type GoogleOAuthHandler struct {
@@ -272,131 +273,156 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 
 // Example updates for handleSignIn:
 func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var signInReq SignInRequest
-    if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var signInReq SignInRequest
+	if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if signInReq.Email == "" || signInReq.Password == "" {
-        return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
-    }
+	if signInReq.Email == "" || signInReq.Password == "" {
+		return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
+	}
 
-    authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-        AuthFlow: types.AuthFlowTypeUserPasswordAuth,
-        ClientId: &h.clientID,
-        AuthParameters: map[string]string{
-            "USERNAME": signInReq.Email,
-            "PASSWORD": signInReq.Password,
-        },
-    })
+	authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: types.AuthFlowTypeUserPasswordAuth,
+		ClientId: &h.clientID,
+		AuthParameters: map[string]string{
+			"USERNAME": signInReq.Email,
+			"PASSWORD": signInReq.Password,
+		},
+	})
 
-    if err != nil {
-        log.Printf("Error signing in user: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error signing in user: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Sign in successful", 
-        map[string]interface{}{
-            "access_token":  *authResult.AuthenticationResult.AccessToken,
-            "refresh_token": *authResult.AuthenticationResult.RefreshToken,
-            "expires_in":    authResult.AuthenticationResult.ExpiresIn,
-        }, ""), nil
+	return sendAPIResponse(200, true, "Sign in successful",
+		map[string]interface{}{
+			"access_token":  *authResult.AuthenticationResult.AccessToken,
+			"refresh_token": *authResult.AuthenticationResult.RefreshToken,
+			"expires_in":    authResult.AuthenticationResult.ExpiresIn,
+		}, ""), nil
 }
 
 func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
-    if token == "" {
-        return sendAPIResponse(401, false, "", nil, "Authorization token is required"), nil
-    }
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Authorization token is required"), nil
+	}
 
-    user, err := h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
-        UserPoolId: &h.userPoolID,
-        Username:   aws.String(getUsernameFromToken(token)),
-    })
+	user, err := h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
+		UserPoolId: &h.userPoolID,
+		Username:   aws.String(getUsernameFromToken(token)),
+	})
 
-    if err != nil {
-        log.Printf("Error getting user profile: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error getting user profile: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    var email, linkedProviders string
-    for _, attr := range user.UserAttributes {
-        switch *attr.Name {
-        case "email":
-            email = *attr.Value
-        case "custom:linked_providers":
-            linkedProviders = *attr.Value
-        }
-    }
+	var email, linkedProviders string
+	for _, attr := range user.UserAttributes {
+		switch *attr.Name {
+		case "email":
+			email = *attr.Value
+		case "custom:linked_providers":
+			linkedProviders = *attr.Value
+		}
+	}
 
-    return sendAPIResponse(200, true, "Profile retrieved successfully", UserProfileResponse{
-        Email:           email,
-        Username:        *user.Username,
-        LinkedProviders: strings.Split(linkedProviders, ","),
-    }, ""), nil
+	return sendAPIResponse(200, true, "Profile retrieved successfully", UserProfileResponse{
+		Email:           email,
+		Username:        *user.Username,
+		LinkedProviders: strings.Split(linkedProviders, ","),
+	}, ""), nil
 }
 
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var refreshReq RefreshTokenRequest
-    if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var refreshReq RefreshTokenRequest
+	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if refreshReq.RefreshToken == "" {
-        return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
-    }
+	if refreshReq.RefreshToken == "" {
+		return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
+	}
 
-    result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-        AuthFlow: types.AuthFlowTypeRefreshToken,
-        ClientId: &h.clientID,
-        AuthParameters: map[string]string{
-            "REFRESH_TOKEN": refreshReq.RefreshToken,
-        },
-    })
+	result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: types.AuthFlowTypeRefreshToken,
+		ClientId: &h.clientID,
+		AuthParameters: map[string]string{
+			"REFRESH_TOKEN": refreshReq.RefreshToken,
+		},
+	})
 
-    if err != nil {
-        log.Printf("Error refreshing token: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error refreshing token: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
-        "access_token": *result.AuthenticationResult.AccessToken,
-        "expires_in":   result.AuthenticationResult.ExpiresIn,
-    }, ""), nil
+	return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
+		"access_token": *result.AuthenticationResult.AccessToken,
+		"expires_in":   result.AuthenticationResult.ExpiresIn,
+	}, ""), nil
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var confirmReq ConfirmSignUpRequest
-    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var confirmReq ConfirmSignUpRequest
+	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if confirmReq.Email == "" || confirmReq.Code == "" {
-        return sendAPIResponse(400, false, "", nil, "Email and confirmation code are required"), nil
-    }
+	if confirmReq.Email == "" || confirmReq.Code == "" {
+		return sendAPIResponse(400, false, "", nil, "Email and confirmation code are required"), nil
+	}
 
-    _, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
-        ClientId:         &h.clientID,
-        Username:         &confirmReq.Email,
-        ConfirmationCode: &confirmReq.Code,
-    })
+	_, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
+		ClientId:         &h.clientID,
+		Username:         &confirmReq.Email,
+		ConfirmationCode: &confirmReq.Code,
+	})
 
-    if err != nil {
-        log.Printf("Error confirming signup: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error confirming signup: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Email verified successfully", nil, ""), nil
+	return sendAPIResponse(200, true, "Email verified successfully", nil, ""), nil
 }
 
 func getUsernameFromToken(token string) string {
-	// In a real implementation, this would decode the JWT and extract the username
-	// For now, we'll return a placeholder
-	return "placeholder_username"
+    // Parse the token without verification first to get the claims
+    unverifiedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
+    if err != nil {
+        log.Printf("Error parsing unverified token: %v", err)
+        return ""
+    }
+
+    // Get the claims from the token
+    claims, ok := unverifiedToken.Claims.(jwt.MapClaims)
+    if !ok {
+        log.Printf("Error getting claims from unverified token")
+        return ""
+    }
+
+    // Get the username directly from the token claims
+    username, ok := claims["username"].(string)
+    if !ok {
+        // Try cognito:username if username is not found
+        username, ok = claims["cognito:username"].(string)
+        if !ok {
+            log.Printf("No username found in token claims")
+            return ""
+        }
+    }
+
+    // Log successful username extraction
+    log.Printf("Successfully extracted username from token: %s", username)
+    return username
 }
 
 func main() {
@@ -415,78 +441,78 @@ type ConfirmSignUpRequest struct {
 
 // Add this new handler function
 func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var forgotReq ForgotPasswordRequest
-    if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var forgotReq ForgotPasswordRequest
+	if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if forgotReq.Email == "" {
-        return sendAPIResponse(400, false, "", nil, "Email is required"), nil
-    }
+	if forgotReq.Email == "" {
+		return sendAPIResponse(400, false, "", nil, "Email is required"), nil
+	}
 
-    _, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
-        ClientId: &h.clientID,
-        Username: &forgotReq.Email,
-    })
+	_, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
+		ClientId: &h.clientID,
+		Username: &forgotReq.Email,
+	})
 
-    if err != nil {
-        log.Printf("Error initiating password reset: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error initiating password reset: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Password reset code sent successfully", nil, ""), nil
+	return sendAPIResponse(200, true, "Password reset code sent successfully", nil, ""), nil
 }
 
 func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var confirmReq ConfirmForgotPasswordRequest
-    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var confirmReq ConfirmForgotPasswordRequest
+	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if confirmReq.Email == "" || confirmReq.Code == "" || confirmReq.NewPassword == "" {
-        return sendAPIResponse(400, false, "", nil, "Email, code, and new password are required"), nil
-    }
+	if confirmReq.Email == "" || confirmReq.Code == "" || confirmReq.NewPassword == "" {
+		return sendAPIResponse(400, false, "", nil, "Email, code, and new password are required"), nil
+	}
 
-    _, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
-        ClientId:         &h.clientID,
-        Username:         &confirmReq.Email,
-        Password:         &confirmReq.NewPassword,
-        ConfirmationCode: &confirmReq.Code,
-    })
+	_, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
+		ClientId:         &h.clientID,
+		Username:         &confirmReq.Email,
+		Password:         &confirmReq.NewPassword,
+		ConfirmationCode: &confirmReq.Code,
+	})
 
-    if err != nil {
-        log.Printf("Error confirming password reset: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error confirming password reset: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Password reset successfully", nil, ""), nil
+	return sendAPIResponse(200, true, "Password reset successfully", nil, ""), nil
 }
 
 func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var resendReq struct {
-        Email string `json:"email"`
-    }
+	var resendReq struct {
+		Email string `json:"email"`
+	}
 
-    if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if resendReq.Email == "" {
-        return sendAPIResponse(400, false, "", nil, "Email is required"), nil
-    }
+	if resendReq.Email == "" {
+		return sendAPIResponse(400, false, "", nil, "Email is required"), nil
+	}
 
-    _, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
-        ClientId: &h.clientID,
-        Username: &resendReq.Email,
-    })
+	_, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
+		ClientId: &h.clientID,
+		Username: &resendReq.Email,
+	})
 
-    if err != nil {
-        log.Printf("Error resending confirmation code: %v", err)
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	if err != nil {
+		log.Printf("Error resending confirmation code: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
 
-    return sendAPIResponse(200, true, "Confirmation code resent successfully", nil, ""), nil
+	return sendAPIResponse(200, true, "Confirmation code resent successfully", nil, ""), nil
 }

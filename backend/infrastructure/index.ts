@@ -322,6 +322,7 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:ForgotPassword",
                     "cognito-idp:ConfirmForgotPassword",
                     "cognito-idp:GetUser",
+                    "cognito-idp:AdminGetUser",        // Added this permission
                     "cognito-idp:UpdateUserAttributes",
                     "cognito-idp:VerifyUserAttribute",
                     "cognito-idp:ResendConfirmationCode" 
