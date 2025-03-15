@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -103,6 +104,10 @@ func NewAuthHandler() (*AuthHandler, error) {
 
 func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Add debug logging
+	log.Printf("Request Path: %s", request.RequestContext.HTTP.Path)
+	log.Printf("Headers: %v", request.Headers)
+
+	// Add debug logging
 	log.Printf("Received request path: %s", request.RequestContext.HTTP.Path)
 	log.Printf("Raw path: %s", request.RawPath)
 
@@ -158,24 +163,87 @@ type APIResponse struct {
 }
 
 // Example of how to modify a handler (showing signup handler as example):
+// Helper functions at package level
+func handleCognitoError(err error) (int, string) {
+	statusCode := 500
+	errorMessage := "An unexpected error occurred"
+
+	// Declare pointer variables for each error type
+	var usernameExistsErr *types.UsernameExistsException
+	var invalidPasswordErr *types.InvalidPasswordException
+	var invalidParamErr *types.InvalidParameterException
+	var notAuthorizedErr *types.NotAuthorizedException
+	var userNotFoundErr *types.UserNotFoundException
+	var codeMismatchErr *types.CodeMismatchException
+	var expiredCodeErr *types.ExpiredCodeException
+	var userNotConfirmedErr *types.UserNotConfirmedException
+	var tooManyRequestsErr *types.TooManyRequestsException
+	var limitExceededErr *types.LimitExceededException
+
+	switch {
+	case errors.As(err, &usernameExistsErr):
+		statusCode = 400
+		errorMessage = "An account with this email already exists"
+	case errors.As(err, &invalidPasswordErr):
+		statusCode = 400
+		errorMessage = "Password must be at least 6 characters long"
+	case errors.As(err, &invalidParamErr):
+		statusCode = 400
+		errorMessage = "Invalid input provided"
+	case errors.As(err, &notAuthorizedErr):
+		statusCode = 401
+		errorMessage = "Invalid credentials"
+	case errors.As(err, &userNotFoundErr):
+		statusCode = 404
+		errorMessage = "Account not found"
+	case errors.As(err, &codeMismatchErr):
+		statusCode = 400
+		errorMessage = "Invalid verification code"
+	case errors.As(err, &expiredCodeErr):
+		statusCode = 400
+		errorMessage = "Verification code has expired. Please request a new one"
+	case errors.As(err, &userNotConfirmedErr):
+		statusCode = 403
+		errorMessage = "Please verify your email address to continue"
+	case errors.As(err, &tooManyRequestsErr), errors.As(err, &limitExceededErr):
+		statusCode = 429
+		errorMessage = "Too many attempts. Please try again later"
+	}
+
+	// Log the technical error for debugging
+	log.Printf("Technical error details: %v", err)
+
+	return statusCode, errorMessage
+}
+
+func sendAPIResponse(statusCode int, success bool, message string, data interface{}, err string) events.APIGatewayV2HTTPResponse {
+	response := APIResponse{
+		Success: success,
+		Message: message,
+		Data:    data,
+		Error:   err,
+	}
+	jsonResponse, _ := json.Marshal(response)
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: statusCode,
+		Body:       string(jsonResponse),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+	}
+}
+
+// Then your handlers become much cleaner
 func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signUpReq SignUpRequest
 	if err := json.Unmarshal([]byte(request.Body), &signUpReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
 	}
 
-	// Use email as username directly
+	if signUpReq.Email == "" || signUpReq.Password == "" {
+		return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
+	}
+
 	_, err := h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 		ClientId: &h.clientID,
 		Username: &signUpReq.Email,
@@ -194,268 +262,135 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 
 	if err != nil {
 		log.Printf("Error signing up user: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Error signing up user",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
-	// Update the success response to use APIResponse format
-	response := APIResponse{
-		Success: true,
-		Message: "User signed up successfully",
-		Data: map[string]interface{}{
-			"email": signUpReq.Email,
-		},
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+	return sendAPIResponse(200, true, "Account created successfully!",
+		map[string]interface{}{"email": signUpReq.Email}, ""), nil
 }
 
 // Example updates for handleSignIn:
 func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var signInReq SignInRequest
-	if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    var signInReq SignInRequest
+    if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	// Use email directly as username
-	authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-		AuthFlow: types.AuthFlowTypeUserPasswordAuth,
-		ClientId: &h.clientID,
-		AuthParameters: map[string]string{
-			"USERNAME": signInReq.Email,
-			"PASSWORD": signInReq.Password,
-		},
-	})
+    if signInReq.Email == "" || signInReq.Password == "" {
+        return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
+    }
 
-	if err != nil {
-		log.Printf("Error signing in user: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid credentials",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 401,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+        AuthFlow: types.AuthFlowTypeUserPasswordAuth,
+        ClientId: &h.clientID,
+        AuthParameters: map[string]string{
+            "USERNAME": signInReq.Email,
+            "PASSWORD": signInReq.Password,
+        },
+    })
 
-	response := APIResponse{
-		Success: true,
-		Message: "Sign in successful",
-		Data: map[string]interface{}{
-			"access_token":  *authResult.AuthenticationResult.AccessToken,
-			"refresh_token": *authResult.AuthenticationResult.RefreshToken,
-			"expires_in":    authResult.AuthenticationResult.ExpiresIn,
-		},
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    if err != nil {
+        log.Printf("Error signing in user: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Sign in successful", 
+        map[string]interface{}{
+            "access_token":  *authResult.AuthenticationResult.AccessToken,
+            "refresh_token": *authResult.AuthenticationResult.RefreshToken,
+            "expires_in":    authResult.AuthenticationResult.ExpiresIn,
+        }, ""), nil
 }
 
 func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
-	if token == "" {
-		response := APIResponse{
-			Success: false,
-			Error:   "Unauthorized",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 401,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+    if token == "" {
+        return sendAPIResponse(401, false, "", nil, "Authorization token is required"), nil
+    }
 
-	// Get user info from Cognito
-	user, err := h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
-		UserPoolId: &h.userPoolID,
-		Username:   aws.String(getUsernameFromToken(token)),
-	})
-	if err != nil {
-		log.Printf("Error getting user profile: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Error retrieving user profile",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    user, err := h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
+        UserPoolId: &h.userPoolID,
+        Username:   aws.String(getUsernameFromToken(token)),
+    })
 
-	// Extract user attributes
-	var email, linkedProviders string
-	for _, attr := range user.UserAttributes {
-		switch *attr.Name {
-		case "email":
-			email = *attr.Value
-		case "custom:linked_providers":
-			linkedProviders = *attr.Value
-		}
-	}
+    if err != nil {
+        log.Printf("Error getting user profile: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
 
-	response := UserProfileResponse{
-		Email:           email,
-		Username:        *user.Username,
-		LinkedProviders: strings.Split(linkedProviders, ","),
-	}
+    var email, linkedProviders string
+    for _, attr := range user.UserAttributes {
+        switch *attr.Name {
+        case "email":
+            email = *attr.Value
+        case "custom:linked_providers":
+            linkedProviders = *attr.Value
+        }
+    }
 
-	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(responseJSON),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    return sendAPIResponse(200, true, "Profile retrieved successfully", UserProfileResponse{
+        Email:           email,
+        Username:        *user.Username,
+        LinkedProviders: strings.Split(linkedProviders, ","),
+    }, ""), nil
 }
 
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var refreshReq RefreshTokenRequest
-	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    var refreshReq RefreshTokenRequest
+    if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	// Initiate auth refresh
-	result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-		AuthFlow: types.AuthFlowTypeRefreshToken,
-		ClientId: &h.clientID,
-		AuthParameters: map[string]string{
-			"REFRESH_TOKEN": refreshReq.RefreshToken,
-		},
-	})
+    if refreshReq.RefreshToken == "" {
+        return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
+    }
 
-	if err != nil {
-		log.Printf("Error refreshing token: %v", err)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 401,
-			Body:       "Invalid refresh token",
-		}, nil
-	}
+    result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+        AuthFlow: types.AuthFlowTypeRefreshToken,
+        ClientId: &h.clientID,
+        AuthParameters: map[string]string{
+            "REFRESH_TOKEN": refreshReq.RefreshToken,
+        },
+    })
 
-	response := map[string]interface{}{
-		"access_token": *result.AuthenticationResult.AccessToken,
-		"expires_in":   result.AuthenticationResult.ExpiresIn,
-	}
+    if err != nil {
+        log.Printf("Error refreshing token: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
 
-	responseJSON, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(responseJSON),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
+        "access_token": *result.AuthenticationResult.AccessToken,
+        "expires_in":   result.AuthenticationResult.ExpiresIn,
+    }, ""), nil
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var confirmReq ConfirmSignUpRequest
-	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    var confirmReq ConfirmSignUpRequest
+    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	// Use email directly as username
-	_, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
-		ClientId:         &h.clientID,
-		Username:         &confirmReq.Email,
-		ConfirmationCode: &confirmReq.Code,
-	})
+    if confirmReq.Email == "" || confirmReq.Code == "" {
+        return sendAPIResponse(400, false, "", nil, "Email and confirmation code are required"), nil
+    }
 
-	if err != nil {
-		log.Printf("Error confirming signup: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid confirmation code",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    _, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
+        ClientId:         &h.clientID,
+        Username:         &confirmReq.Email,
+        ConfirmationCode: &confirmReq.Code,
+    })
 
-	// In handleSignUp, update the success response:
-	response := APIResponse{
-		Success: true,
-		Message: "User signed up successfully",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    if err != nil {
+        log.Printf("Error confirming signup: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Email verified successfully", nil, ""), nil
 }
 
 func getUsernameFromToken(token string) string {
@@ -480,154 +415,78 @@ type ConfirmSignUpRequest struct {
 
 // Add this new handler function
 func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var forgotReq ForgotPasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       "Invalid request body",
-		}, nil
-	}
+    var forgotReq ForgotPasswordRequest
+    if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	_, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
-		ClientId: &h.clientID,
-		Username: &forgotReq.Email,
-	})
+    if forgotReq.Email == "" {
+        return sendAPIResponse(400, false, "", nil, "Email is required"), nil
+    }
 
-	if err != nil {
-		log.Printf("Error initiating password reset: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Error initiating password reset",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    _, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
+        ClientId: &h.clientID,
+        Username: &forgotReq.Email,
+    })
 
-	response := APIResponse{
-		Success: true,
-		Message: "Password reset code sent successfully",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    if err != nil {
+        log.Printf("Error initiating password reset: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Password reset code sent successfully", nil, ""), nil
 }
 
 func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var confirmReq ConfirmForgotPasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    var confirmReq ConfirmForgotPasswordRequest
+    if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	_, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
-		ClientId:         &h.clientID,
-		Username:         &confirmReq.Email,
-		Password:         &confirmReq.NewPassword,
-		ConfirmationCode: &confirmReq.Code,
-	})
+    if confirmReq.Email == "" || confirmReq.Code == "" || confirmReq.NewPassword == "" {
+        return sendAPIResponse(400, false, "", nil, "Email, code, and new password are required"), nil
+    }
 
-	if err != nil {
-		log.Printf("Error confirming password reset: %v", err)
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid confirmation code or password",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    _, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
+        ClientId:         &h.clientID,
+        Username:         &confirmReq.Email,
+        Password:         &confirmReq.NewPassword,
+        ConfirmationCode: &confirmReq.Code,
+    })
 
-	response := APIResponse{
-		Success: true,
-		Message: "Password reset successfully",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    if err != nil {
+        log.Printf("Error confirming password reset: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Password reset successfully", nil, ""), nil
 }
 
 func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var resendReq struct {
-		Email string `json:"email"`
-	}
+    var resendReq struct {
+        Email string `json:"email"`
+    }
 
-	if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Invalid request body",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 400,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	// Use email directly as username
-	_, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
-		ClientId: &h.clientID,
-		Username: &resendReq.Email,
-	})
+    if resendReq.Email == "" {
+        return sendAPIResponse(400, false, "", nil, "Email is required"), nil
+    }
 
-	if err != nil {
-		response := APIResponse{
-			Success: false,
-			Error:   "Error resending confirmation code",
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
-	}
+    _, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
+        ClientId: &h.clientID,
+        Username: &resendReq.Email,
+    })
 
-	response := APIResponse{
-		Success: true,
-		Message: "Confirmation code resent successfully",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       string(jsonResponse),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
-	}, nil
+    if err != nil {
+        log.Printf("Error resending confirmation code: %v", err)
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Confirmation code resent successfully", nil, ""), nil
 }
