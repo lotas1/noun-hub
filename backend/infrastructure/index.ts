@@ -18,7 +18,7 @@ const commonTags = {
 };
 
 // Domain configuration
-const domainName = "nounhub.org";
+const domainName = "api.nounhub.org";  // Change to use api subdomain
 
 // Create AWS provider for us-east-1 region specifically for ACM certificates
 // This is required because ACM certificates used with CloudFront must be in us-east-1
@@ -121,6 +121,7 @@ const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
     generateSecret: false,
 
     // Callback URLs
+    // Update Callback URLs to use the frontend domain
     callbackUrls: [`https://nounhub.org/${stack}/auth/callback`],
     logoutUrls: [`https://nounhub.org/${stack}/auth/logout`],
 
@@ -198,13 +199,15 @@ const authFunction = new aws.lambda.Function("auth-function", {
 //------------------------------------------------------------
 
 // Create HTTP API Gateway
+// Update CORS configuration to be more permissive
 const api = new aws.apigatewayv2.Api("auth-api", {
     name: `nounhub-auth-api-${stack}`,
     protocolType: "HTTP",
     corsConfiguration: {
         allowOrigins: ["*"],
         allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "Origin", "Accept"],
+        exposeHeaders: ["*"],
         maxAge: 300
     },
     tags: commonTags
@@ -262,8 +265,6 @@ const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
 // 6) Custom Domain Configuration
 //------------------------------------------------------------
 
-// Commenting out custom domain configuration for now
-/*
 // Use an existing certificate (after manual validation)
 const certificate = aws.acm.Certificate.get("existing-certificate", 
     config.require("certificateArn"),  // Get the ARN from Pulumi config
@@ -287,7 +288,7 @@ const apiMapping = new aws.apigatewayv2.ApiMapping("api-mapping", {
     apiId: api.id,
     domainName: apiDomainName.id,
     stage: stage.id,
-    apiMappingKey: stack, // This creates a base path matching your stack name
+    apiMappingKey: stack  // Add the stack as the API mapping key
 });
 
 // Export the domain configuration details
@@ -296,7 +297,6 @@ export const apiDomainNameHostedZoneId = apiDomainName.domainNameConfiguration.h
 
 // Update the API endpoint export to include both the default and custom domain
 export const customDomainEndpoint = pulumi.interpolate`https://${domainName}/${stack}`;
-*/
 
 // Export only the default API Gateway endpoint
 export const apiEndpoint = pulumi.interpolate`${api.apiEndpoint}/${stack}`;
