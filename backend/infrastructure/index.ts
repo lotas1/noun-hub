@@ -132,7 +132,8 @@ const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
     explicitAuthFlows: [
         "ALLOW_USER_SRP_AUTH",
         "ALLOW_REFRESH_TOKEN_AUTH",
-        "ALLOW_USER_PASSWORD_AUTH"
+        "ALLOW_USER_PASSWORD_AUTH",
+        "ALLOW_CUSTOM_AUTH"  // Add this line
     ]
 });
 

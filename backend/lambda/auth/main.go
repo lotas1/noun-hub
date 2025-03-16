@@ -340,33 +340,41 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 }
 
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var refreshReq RefreshTokenRequest
-	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-	}
+    var refreshReq RefreshTokenRequest
+    if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
+        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+    }
 
-	if refreshReq.RefreshToken == "" {
-		return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
-	}
+    if refreshReq.RefreshToken == "" {
+        return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
+    }
 
-	result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-		AuthFlow: types.AuthFlowTypeRefreshToken,
-		ClientId: &h.clientID,
-		AuthParameters: map[string]string{
-			"REFRESH_TOKEN": refreshReq.RefreshToken,
-		},
-	})
+    // Add debug logging
+    log.Printf("Attempting to refresh token with client ID: %s", h.clientID)
 
-	if err != nil {
-		log.Printf("Error refreshing token: %v", err)
-		statusCode, errorMessage := handleCognitoError(err)
-		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-	}
+    result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+        AuthFlow: types.AuthFlowTypeRefreshTokenAuth,  // Change this line
+        ClientId: &h.clientID,
+        AuthParameters: map[string]string{
+            "REFRESH_TOKEN": refreshReq.RefreshToken,
+        },
+    })
 
-	return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
-		"access_token": *result.AuthenticationResult.AccessToken,
-		"expires_in":   result.AuthenticationResult.ExpiresIn,
-	}, ""), nil
+    if err != nil {
+        log.Printf("Error refreshing token: %v", err)
+        // Add more detailed error logging
+        var notAuthErr *types.NotAuthorizedException
+        if errors.As(err, &notAuthErr) {
+            log.Printf("Token validation failed: %v", notAuthErr)
+        }
+        statusCode, errorMessage := handleCognitoError(err)
+        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+    }
+
+    return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
+        "access_token": *result.AuthenticationResult.AccessToken,
+        "expires_in":   result.AuthenticationResult.ExpiresIn,
+    }, ""), nil
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {

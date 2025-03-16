@@ -60,3 +60,6 @@ yarn-error.log*
 .local
 .cache
 .temp
+
+# Cursor run files
+.cursor
