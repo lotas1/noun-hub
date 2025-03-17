@@ -76,6 +76,10 @@ type ConfirmForgotPasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+type SignOutRequest struct {
+	Global bool `json:"global"`
+}
+
 func NewAuthHandler() (*AuthHandler, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -138,6 +142,8 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleForgotPassword(ctx, request)
 	case "/auth/confirm-forgot-password":
 		return h.handleConfirmForgotPassword(ctx, request)
+	case "/auth/signout":
+		return h.handleSignOut(ctx, request)
 	// In HandleRequest function, update the default case
 	default:
 		response := APIResponse{
@@ -340,41 +346,77 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 }
 
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-    var refreshReq RefreshTokenRequest
-    if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-        return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
-    }
+	var refreshReq RefreshTokenRequest
+	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
+		log.Printf("Error unmarshaling refresh token request: %v", err)
+		log.Printf("Request body length: %d", len(request.Body))
+		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	}
 
-    if refreshReq.RefreshToken == "" {
-        return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
-    }
+	if refreshReq.RefreshToken == "" {
+		log.Printf("Refresh token is empty in request")
+		return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
+	}
 
-    // Add debug logging
-    log.Printf("Attempting to refresh token with client ID: %s", h.clientID)
+	// Log token details for debugging
+	log.Printf("Refresh token length: %d", len(refreshReq.RefreshToken))
+	log.Printf("First 10 chars of refresh token: %s...", refreshReq.RefreshToken[:min(10, len(refreshReq.RefreshToken))])
 
-    result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
-        AuthFlow: types.AuthFlowTypeRefreshTokenAuth,  // Change this line
-        ClientId: &h.clientID,
-        AuthParameters: map[string]string{
-            "REFRESH_TOKEN": refreshReq.RefreshToken,
-        },
-    })
+	// Validate refresh token format (should be a JWT)
+	if !strings.HasPrefix(refreshReq.RefreshToken, "eyJ") {
+		log.Printf("Invalid refresh token format - doesn't start with 'eyJ'")
+		return sendAPIResponse(400, false, "", nil, "Invalid refresh token format"), nil
+	}
 
-    if err != nil {
-        log.Printf("Error refreshing token: %v", err)
-        // Add more detailed error logging
-        var notAuthErr *types.NotAuthorizedException
-        if errors.As(err, &notAuthErr) {
-            log.Printf("Token validation failed: %v", notAuthErr)
-        }
-        statusCode, errorMessage := handleCognitoError(err)
-        return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
-    }
+	// Attempt to refresh the token
+	result, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: types.AuthFlowTypeRefreshTokenAuth,
+		ClientId: &h.clientID,
+		AuthParameters: map[string]string{
+			"REFRESH_TOKEN": refreshReq.RefreshToken,
+		},
+	})
 
-    return sendAPIResponse(200, true, "Token refreshed successfully", map[string]interface{}{
-        "access_token": *result.AuthenticationResult.AccessToken,
-        "expires_in":   result.AuthenticationResult.ExpiresIn,
-    }, ""), nil
+	if err != nil {
+		log.Printf("Error refreshing token: %v", err)
+
+		var notAuthErr *types.NotAuthorizedException
+		if errors.As(err, &notAuthErr) {
+			// Check if token was revoked or expired
+			if strings.Contains(err.Error(), "Invalid Refresh Token") {
+				log.Printf("Refresh token was invalid or expired")
+				return sendAPIResponse(401, false, "", nil, "Refresh token has expired or was revoked. Please sign in again."), nil
+			}
+		}
+
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if result.AuthenticationResult == nil || result.AuthenticationResult.AccessToken == nil {
+		log.Printf("Unexpected response: AuthenticationResult or AccessToken is nil")
+		return sendAPIResponse(500, false, "", nil, "Unexpected authentication response"), nil
+	}
+
+	response := map[string]interface{}{
+		"access_token": *result.AuthenticationResult.AccessToken,
+		"expires_in":   result.AuthenticationResult.ExpiresIn,
+	}
+
+	// Include refresh token in response if provided
+	if result.AuthenticationResult.RefreshToken != nil {
+		response["refresh_token"] = *result.AuthenticationResult.RefreshToken
+	}
+
+	return sendAPIResponse(200, true, "Token refreshed successfully", response, ""), nil
+}
+
+// Helper function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -403,34 +445,34 @@ func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.AP
 }
 
 func getUsernameFromToken(token string) string {
-    // Parse the token without verification first to get the claims
-    unverifiedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
-    if err != nil {
-        log.Printf("Error parsing unverified token: %v", err)
-        return ""
-    }
+	// Parse the token without verification first to get the claims
+	unverifiedToken, _, err := new(jwt.Parser).ParseUnverified(token, jwt.MapClaims{})
+	if err != nil {
+		log.Printf("Error parsing unverified token: %v", err)
+		return ""
+	}
 
-    // Get the claims from the token
-    claims, ok := unverifiedToken.Claims.(jwt.MapClaims)
-    if !ok {
-        log.Printf("Error getting claims from unverified token")
-        return ""
-    }
+	// Get the claims from the token
+	claims, ok := unverifiedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		log.Printf("Error getting claims from unverified token")
+		return ""
+	}
 
-    // Get the username directly from the token claims
-    username, ok := claims["username"].(string)
-    if !ok {
-        // Try cognito:username if username is not found
-        username, ok = claims["cognito:username"].(string)
-        if !ok {
-            log.Printf("No username found in token claims")
-            return ""
-        }
-    }
+	// Get the username directly from the token claims
+	username, ok := claims["username"].(string)
+	if !ok {
+		// Try cognito:username if username is not found
+		username, ok = claims["cognito:username"].(string)
+		if !ok {
+			log.Printf("No username found in token claims")
+			return ""
+		}
+	}
 
-    // Log successful username extraction
-    log.Printf("Successfully extracted username from token: %s", username)
-    return username
+	// Log successful username extraction
+	log.Printf("Successfully extracted username from token: %s", username)
+	return username
 }
 
 func main() {
@@ -523,4 +565,36 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 	}
 
 	return sendAPIResponse(200, true, "Confirmation code resent successfully", nil, ""), nil
+}
+
+func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Extract access token
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Authorization token is required"), nil
+	}
+
+	var signOutReq SignOutRequest
+	if err := json.Unmarshal([]byte(request.Body), &signOutReq); err != nil {
+		// Default to local sign-out if body is empty or invalid
+		signOutReq.Global = false
+	}
+
+	if signOutReq.Global {
+		// Global sign-out invalidates all refresh tokens
+		_, err := h.cognitoClient.GlobalSignOut(ctx, &cognitoidentityprovider.GlobalSignOutInput{
+			AccessToken: &token,
+		})
+		if err != nil {
+			log.Printf("Error during global sign-out: %v", err)
+			statusCode, errorMessage := handleCognitoError(err)
+			return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+		}
+		return sendAPIResponse(200, true, "Successfully signed out from all devices", nil, ""), nil
+	}
+
+	// For local sign-out, we'll just return success since the client will clear their tokens
+	// The access token will expire naturally, and we don't need to revoke it
+	// The client should clear all local storage tokens
+	return sendAPIResponse(200, true, "Successfully signed out", nil, ""), nil
 }

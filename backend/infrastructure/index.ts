@@ -84,12 +84,6 @@ const userPool = new aws.cognito.UserPool("auth-userpool", {
         allowAdminCreateUserOnly: false
     },
 
-    // Device tracking
-    deviceConfiguration: {
-        challengeRequiredOnNewDevice: true,
-        deviceOnlyRememberedOnUserPrompt: true
-    },
-
     tags: commonTags
 });
 
@@ -234,7 +228,8 @@ const routes = [
     { path: "/auth/refresh", method: "POST" },
     { path: "/auth/resend-confirmation", method: "POST" },
     { path: "/auth/forgot-password", method: "POST" },
-    { path: "/auth/confirm-forgot-password", method: "POST" }
+    { path: "/auth/confirm-forgot-password", method: "POST" },
+    { path: "/auth/signout", method: "POST" }
 ];
 
 // Create routes
