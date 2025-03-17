@@ -25,6 +25,17 @@ type GoogleOAuthHandler struct {
 }
 
 func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	var requestBody struct {
+		Token string `json:"token"`
+	}
+	if response := validateRequestBody(request.Body, &requestBody); response != nil {
+		return *response, nil
+	}
+
+	if requestBody.Token == "" {
+		return sendAPIResponse(400, false, "", nil, "Google OAuth token is required"), nil
+	}
+
 	response := APIResponse{
 		Success: false,
 		Error:   "Google OAuth not implemented yet",
@@ -107,21 +118,19 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}, nil
 }
 
-func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Add debug logging
-	log.Printf("Request Path: %s", request.RequestContext.HTTP.Path)
-	log.Printf("Headers: %v", request.Headers)
-
-	// Add debug logging
-	log.Printf("Received request path: %s", request.RequestContext.HTTP.Path)
-	log.Printf("Raw path: %s", request.RawPath)
-
-	// Remove stage prefix from path
-	path := request.RequestContext.HTTP.Path
+// Helper function to normalize API paths
+func normalizePath(path string) string {
 	if parts := strings.Split(path, "/"); len(parts) > 2 {
-		// Reconstruct the path without the stage name
-		path = "/" + strings.Join(parts[2:], "/")
+		return "/" + strings.Join(parts[2:], "/")
 	}
+	return path
+}
+
+func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	path := normalizePath(request.RequestContext.HTTP.Path)
+
+	// Single debug log for request tracking
+	log.Printf("Processing request: %s %s", request.RequestContext.HTTP.Method, path)
 
 	switch path {
 	case "/auth/signup":
@@ -144,21 +153,20 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 		return h.handleConfirmForgotPassword(ctx, request)
 	case "/auth/signout":
 		return h.handleSignOut(ctx, request)
-	// In HandleRequest function, update the default case
 	default:
-		response := APIResponse{
-			Success: false,
-			Error:   fmt.Sprintf("Not Found. Path received: %s", path),
-		}
-		jsonResponse, _ := json.Marshal(response)
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 404,
-			Body:       string(jsonResponse),
-			Headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-		}, nil
+		return sendAPIResponse(404, false, "", nil,
+			fmt.Sprintf("The requested endpoint '%s' does not exist. Please check the documentation for available endpoints.", path)), nil
 	}
+}
+
+// Common request validation helper
+func validateRequestBody(body string, target interface{}) *events.APIGatewayV2HTTPResponse {
+	if err := json.Unmarshal([]byte(body), target); err != nil {
+		response := sendAPIResponse(400, false, "", nil,
+			"Invalid request format. Please check the request body and try again.")
+		return &response
+	}
+	return nil
 }
 
 // Add this type at the top with other type definitions
@@ -243,8 +251,8 @@ func sendAPIResponse(statusCode int, success bool, message string, data interfac
 // Then your handlers become much cleaner
 func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signUpReq SignUpRequest
-	if err := json.Unmarshal([]byte(request.Body), &signUpReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &signUpReq); response != nil {
+		return *response, nil
 	}
 
 	if signUpReq.Email == "" || signUpReq.Password == "" {
@@ -280,8 +288,8 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 // Example updates for handleSignIn:
 func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signInReq SignInRequest
-	if err := json.Unmarshal([]byte(request.Body), &signInReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &signInReq); response != nil {
+		return *response, nil
 	}
 
 	if signInReq.Email == "" || signInReq.Password == "" {
@@ -347,8 +355,8 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var refreshReq RefreshTokenRequest
-	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &refreshReq); response != nil {
+		return *response, nil
 	}
 
 	if refreshReq.RefreshToken == "" {
@@ -391,8 +399,8 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmSignUpRequest
-	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
+		return *response, nil
 	}
 
 	if confirmReq.Email == "" || confirmReq.Code == "" {
@@ -462,8 +470,8 @@ type ConfirmSignUpRequest struct {
 // Add this new handler function
 func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var forgotReq ForgotPasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &forgotReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &forgotReq); response != nil {
+		return *response, nil
 	}
 
 	if forgotReq.Email == "" {
@@ -486,8 +494,8 @@ func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.A
 
 func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmForgotPasswordRequest
-	if err := json.Unmarshal([]byte(request.Body), &confirmReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
+		return *response, nil
 	}
 
 	if confirmReq.Email == "" || confirmReq.Code == "" || confirmReq.NewPassword == "" {
@@ -515,8 +523,8 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 		Email string `json:"email"`
 	}
 
-	if err := json.Unmarshal([]byte(request.Body), &resendReq); err != nil {
-		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
+	if response := validateRequestBody(request.Body, &resendReq); response != nil {
+		return *response, nil
 	}
 
 	if resendReq.Email == "" {
@@ -545,7 +553,7 @@ func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatew
 	}
 
 	var signOutReq SignOutRequest
-	if err := json.Unmarshal([]byte(request.Body), &signOutReq); err != nil {
+	if response := validateRequestBody(request.Body, &signOutReq); response != nil {
 		// Default to local sign-out if body is empty or invalid
 		signOutReq.Global = false
 	}
