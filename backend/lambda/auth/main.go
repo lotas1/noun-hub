@@ -348,24 +348,11 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var refreshReq RefreshTokenRequest
 	if err := json.Unmarshal([]byte(request.Body), &refreshReq); err != nil {
-		log.Printf("Error unmarshaling refresh token request: %v", err)
-		log.Printf("Request body length: %d", len(request.Body))
 		return sendAPIResponse(400, false, "", nil, "Invalid request format"), nil
 	}
 
 	if refreshReq.RefreshToken == "" {
-		log.Printf("Refresh token is empty in request")
 		return sendAPIResponse(400, false, "", nil, "Refresh token is required"), nil
-	}
-
-	// Log token details for debugging
-	log.Printf("Refresh token length: %d", len(refreshReq.RefreshToken))
-	log.Printf("First 10 chars of refresh token: %s...", refreshReq.RefreshToken[:min(10, len(refreshReq.RefreshToken))])
-
-	// Validate refresh token format (should be a JWT)
-	if !strings.HasPrefix(refreshReq.RefreshToken, "eyJ") {
-		log.Printf("Invalid refresh token format - doesn't start with 'eyJ'")
-		return sendAPIResponse(400, false, "", nil, "Invalid refresh token format"), nil
 	}
 
 	// Attempt to refresh the token
@@ -378,23 +365,15 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 	})
 
 	if err != nil {
-		log.Printf("Error refreshing token: %v", err)
-
 		var notAuthErr *types.NotAuthorizedException
 		if errors.As(err, &notAuthErr) {
-			// Check if token was revoked or expired
-			if strings.Contains(err.Error(), "Invalid Refresh Token") {
-				log.Printf("Refresh token was invalid or expired")
-				return sendAPIResponse(401, false, "", nil, "Refresh token has expired or was revoked. Please sign in again."), nil
-			}
+			return sendAPIResponse(401, false, "", nil, "Refresh token has expired or was revoked. Please sign in again."), nil
 		}
-
 		statusCode, errorMessage := handleCognitoError(err)
 		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
 	if result.AuthenticationResult == nil || result.AuthenticationResult.AccessToken == nil {
-		log.Printf("Unexpected response: AuthenticationResult or AccessToken is nil")
 		return sendAPIResponse(500, false, "", nil, "Unexpected authentication response"), nil
 	}
 
@@ -403,20 +382,11 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 		"expires_in":   result.AuthenticationResult.ExpiresIn,
 	}
 
-	// Include refresh token in response if provided
 	if result.AuthenticationResult.RefreshToken != nil {
 		response["refresh_token"] = *result.AuthenticationResult.RefreshToken
 	}
 
 	return sendAPIResponse(200, true, "Token refreshed successfully", response, ""), nil
-}
-
-// Helper function for min
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
