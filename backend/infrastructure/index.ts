@@ -321,7 +321,11 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:AdminGetUser",        // Added this permission
                     "cognito-idp:UpdateUserAttributes",
                     "cognito-idp:VerifyUserAttribute",
-                    "cognito-idp:ResendConfirmationCode" 
+                    "cognito-idp:ResendConfirmationCode",
+                    "cognito-idp:ListUsers",           // Adding ListUsers permission for email lookup
+                    "cognito-idp:AdminCreateUser",     // For Google OAuth user creation
+                    "cognito-idp:AdminUpdateUserAttributes", // For updating user attributes
+                    "cognito-idp:GlobalSignOut"       // For the sign out endpoint
                 ],
                 Resource: userPool.arn
             },

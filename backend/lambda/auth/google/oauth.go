@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
+	"github.com/google/uuid"
 )
 
 type GoogleOAuthHandler struct {
@@ -70,8 +71,10 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 		}, nil
 	}
 
+	var username string
 	if existingUser != nil {
 		// Link Google auth to existing account
+		username = *existingUser.Username
 		err = h.linkGoogleAuth(ctx, existingUser.Username, userInfo)
 		if err != nil {
 			return events.APIGatewayV2HTTPResponse{
@@ -80,8 +83,8 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 			}, nil
 		}
 	} else {
-		// Create new user
-		err = h.createGoogleUser(ctx, userInfo)
+		// Create new user with UUID username
+		username, err = h.createGoogleUser(ctx, userInfo)
 		if err != nil {
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: 500,
@@ -95,7 +98,7 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 		AuthFlow: types.AuthFlowTypeCustomAuth,
 		ClientId: &h.clientID,
 		AuthParameters: map[string]string{
-			"USERNAME": userInfo.Email,
+			"USERNAME": username,
 			"PROVIDER": "Google",
 		},
 	})
@@ -175,10 +178,13 @@ func (h *GoogleOAuthHandler) linkGoogleAuth(ctx context.Context, username *strin
 	return err
 }
 
-func (h *GoogleOAuthHandler) createGoogleUser(ctx context.Context, userInfo *GoogleUserInfo) error {
-	_, err := h.cognitoClient.AdminCreateUser(ctx, &cognitoidentityprovider.AdminCreateUserInput{
+func (h *GoogleOAuthHandler) createGoogleUser(ctx context.Context, userInfo *GoogleUserInfo) (string, error) {
+	// Generate a UUID for the username
+	username := uuid.New().String()
+
+	result, err := h.cognitoClient.AdminCreateUser(ctx, &cognitoidentityprovider.AdminCreateUserInput{
 		UserPoolId: &h.userPoolID,
-		Username:   &userInfo.Email,
+		Username:   &username,
 		UserAttributes: []types.AttributeType{
 			{
 				Name:  aws.String("email"),
@@ -199,5 +205,9 @@ func (h *GoogleOAuthHandler) createGoogleUser(ctx context.Context, userInfo *Goo
 		},
 	})
 
-	return err
+	if err != nil {
+		return "", err
+	}
+
+	return *result.User.Username, nil
 }

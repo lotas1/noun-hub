@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type GoogleOAuthHandler struct {
@@ -259,9 +260,12 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 		return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
 	}
 
+	// Generate a UUID for the username
+	username := uuid.New().String()
+
 	_, err := h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 		ClientId: &h.clientID,
-		Username: &signUpReq.Email,
+		Username: &username,
 		Password: &signUpReq.Password,
 		UserAttributes: []types.AttributeType{
 			{
@@ -282,7 +286,10 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 	}
 
 	return sendAPIResponse(200, true, "Account created successfully!",
-		map[string]interface{}{"email": signUpReq.Email}, ""), nil
+		map[string]interface{}{
+			"email":    signUpReq.Email,
+			"username": username,
+		}, ""), nil
 }
 
 // Example updates for handleSignIn:
@@ -296,11 +303,31 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 		return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
 	}
 
+	// Need to find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", signInReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for authentication
+	username := *users.Users[0].Username
+
 	authResult, err := h.cognitoClient.InitiateAuth(ctx, &cognitoidentityprovider.InitiateAuthInput{
 		AuthFlow: types.AuthFlowTypeUserPasswordAuth,
 		ClientId: &h.clientID,
 		AuthParameters: map[string]string{
-			"USERNAME": signInReq.Email,
+			"USERNAME": username,
 			"PASSWORD": signInReq.Password,
 		},
 	})
@@ -407,9 +434,29 @@ func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.AP
 		return sendAPIResponse(400, false, "", nil, "Email and confirmation code are required"), nil
 	}
 
-	_, err := h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", confirmReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for confirmation
+	username := *users.Users[0].Username
+
+	_, err = h.cognitoClient.ConfirmSignUp(ctx, &cognitoidentityprovider.ConfirmSignUpInput{
 		ClientId:         &h.clientID,
-		Username:         &confirmReq.Email,
+		Username:         &username,
 		ConfirmationCode: &confirmReq.Code,
 	})
 
@@ -478,9 +525,29 @@ func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.A
 		return sendAPIResponse(400, false, "", nil, "Email is required"), nil
 	}
 
-	_, err := h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", forgotReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for password reset
+	username := *users.Users[0].Username
+
+	_, err = h.cognitoClient.ForgotPassword(ctx, &cognitoidentityprovider.ForgotPasswordInput{
 		ClientId: &h.clientID,
-		Username: &forgotReq.Email,
+		Username: &username,
 	})
 
 	if err != nil {
@@ -502,9 +569,29 @@ func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request e
 		return sendAPIResponse(400, false, "", nil, "Email, code, and new password are required"), nil
 	}
 
-	_, err := h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", confirmReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for password confirmation
+	username := *users.Users[0].Username
+
+	_, err = h.cognitoClient.ConfirmForgotPassword(ctx, &cognitoidentityprovider.ConfirmForgotPasswordInput{
 		ClientId:         &h.clientID,
-		Username:         &confirmReq.Email,
+		Username:         &username,
 		Password:         &confirmReq.NewPassword,
 		ConfirmationCode: &confirmReq.Code,
 	})
@@ -531,9 +618,29 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 		return sendAPIResponse(400, false, "", nil, "Email is required"), nil
 	}
 
-	_, err := h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", resendReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for resending confirmation
+	username := *users.Users[0].Username
+
+	_, err = h.cognitoClient.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
 		ClientId: &h.clientID,
-		Username: &resendReq.Email,
+		Username: &username,
 	})
 
 	if err != nil {
