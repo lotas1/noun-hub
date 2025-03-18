@@ -158,6 +158,7 @@ const authFunction = new aws.lambda.Function("auth-function", {
             }]
         })
     }).arn,
+    // Compile and package the Go Lambda function during deployment
     code: new pulumi.asset.AssetArchive({
         ".": new pulumi.asset.FileArchive(
             (() => {
