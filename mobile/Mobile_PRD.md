@@ -4,7 +4,7 @@
 
 ## Executive Summary
 
-This document outlines the technical requirements for the NounHub mobile application. The mobile app will provide a Twitter-like social experience with department-based forums for the National Open University community, built with Flutter for cross-platform compatibility.
+This document outlines the technical requirements for the NounHub mobile application. The mobile app will serve as a comprehensive platform for the National Open University community, featuring StudyLab for academic resources, Feed for school-related news, Forums for structured discussions, and NounBuddy AI chatbot for student assistance. The application will be built with Flutter for cross-platform compatibility.
 
 ## Technical Architecture
 

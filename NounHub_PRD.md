@@ -4,7 +4,7 @@
 
 ## Executive Summary
 
-NounHub is a mobile application designed for the National Open University community, providing a Twitter-like social experience with department-based forums. The platform enables students and faculty to share posts, engage in discussions, and build community within their academic departments.
+NounHub is a comprehensive mobile platform designed exclusively for the National Open University community. The platform features StudyLab for accessing academic resources, a Feed system for school-related news and information, Forums for structured topic-driven conversations, and NounBuddy - an AI chatbot assistant that helps students with inquiries about school fees, program eligibility, academic calendars, and official FAQs. Through these integrated features, NounHub creates a unified digital ecosystem that enhances the academic experience and builds community within NOUN.
 
 ## Product Vision
 
@@ -26,14 +26,14 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 ## Target Users
 
 - Students enrolled in National Open University programs
+- Prospective students seeking enrollment information
+- Aspiring applicants exploring university programs and community
 - Alumni maintaining connections to the university
 
 ## User Metrics & Scale
 
 - Monthly Active Users (MAU): 20,000
 - Daily Active Users (DAU): 3,000
-- Posts: 6,000/day
-- Authentication: 90,000 logins/month
 - Forum Interactions: 45,000/month
 - Data Volume: 225 MB/month, 3.6 million reads/month
 
@@ -43,15 +43,45 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 - Email-based user authentication via AWS Cognito
 - User profiles with basic academic information
 
-### Social Feed
-- Twitter-like post creation and viewing
-- Like, comment, and share functionality
-- Chronological and algorithmic feed options
+### Feed 
+- School-related news and information sharing
+- Streamlined post creation and viewing
+- Like, repost, and quote functionality
+- Chronological feed options
 
-### Department Forums
+### Forums
+- Structured topic-driven conversations with algorithmic content delivery
 - Department-specific discussion spaces
 - Topic creation and commenting
-- Moderation tools for department administrators
+
+#### Forum Tabs
+- **Popular**: Algorithmic feed prioritizing content based on:
+  - Recency: Recent posts receive higher priority
+  - Relevance: Content matching user interests based on past interactions
+  - Engagement: Posts with higher likes and replies get more visibility
+
+- **Following**: Chronological feed showing posts from followed accounts
+  - Reverse chronological order (newest first)
+  - Minimal filtering, focused on posting time
+  - Content exclusively from followed accounts
+
+- **My Activity**: Unified view of user's forum engagement
+  - User-created posts and conversations
+  - Comments and replies on other users' posts
+  - Chronological display of all user interactions
+
+### StudyLab
+- Centralized access to academic resources
+- Course materials and study guides
+- Digital library integration
+- Resource organization and bookmarking
+
+### NounBuddy AI Chatbot
+- AI-powered student assistance
+- School fees inquiry handling
+- Program eligibility information
+- Academic calendar access
+- Official FAQ integration
 
 ## Technical Architecture
 
@@ -63,37 +93,6 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 - **Framework**: Flutter (Dart)
 - **Platforms**: Android, iOS
 - **State Management**: Riverpod
-
-## Success Metrics
-
-- User Engagement: 15% DAU/MAU ratio
-- Content Creation: 0.3 posts per DAU
-- Retention: 40% 30-day retention rate
-- Forum Participation: 30% of users engaging with forums monthly
-
-## Timeline
-
-### Phase 1 (MVP) - 8 weeks
-- Authentication system
-- Basic post creation and viewing
-- Initial department forum structure
-
-### Phase 2 - 6 weeks
-- Enhanced social features (likes, comments)
-- Improved forum functionality
-- Push notifications
-
-### Phase 3 - 6 weeks
-- Advanced search capabilities
-- Content moderation tools
-- Analytics dashboard for administrators
-
-## Cost Projections
-
-- Initial Scale (20k MAU): ~$8/month
-- Medium Scale (50k MAU): ~$25/month
-- Large Scale (100k MAU): ~$50/month
-
 ---
 
 For detailed specifications, please refer to the dedicated PRD documents in the backend and mobile directories.
