@@ -1,3 +1,14 @@
+// Package main provides authentication services for NounHub
+// @title NounHub Authentication API
+// @version 1.0
+// @description Authentication service for NounHub providing user management and authentication endpoints
+// @contact.name NounHub API Support
+// @contact.url https://nounhub.org
+// @BasePath /{stage}
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".
 package main
 
 import (
@@ -17,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	_ "github.com/swaggo/swag" // for swagger annotations
 )
 
 type GoogleOAuthHandler struct {
@@ -25,6 +37,16 @@ type GoogleOAuthHandler struct {
 	clientID      string
 }
 
+// @Summary Sign in with Google
+// @Description Authenticates a user with a Google OAuth token
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body object true "Google OAuth token" schema(type=object,properties=token(type=string,example="google-oauth-token"))
+// @Success 200 {object} APIResponse{data=map[string]interface{}} "Successfully authenticated with Google"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/google [post]
 func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var requestBody struct {
 		Token string `json:"token"`
@@ -59,37 +81,50 @@ type AuthHandler struct {
 }
 
 type SignUpRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
+	// User's password (must be at least 6 characters)
+	Password string `json:"password" example:"Password123!"`
 }
 
 type SignInRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
+	// User's password
+	Password string `json:"password" example:"Password123!"`
 }
 
 type UserProfileResponse struct {
-	Email           string   `json:"email"`
-	Username        string   `json:"username"`
-	LinkedProviders []string `json:"linked_providers"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
+	// User's unique username (UUID)
+	Username string `json:"username" example:"123e4567-e89b-12d3-a456-426614174000"`
+	// List of authentication providers linked to this account
+	LinkedProviders []string `json:"linked_providers" example:"[\"google\"]"`
 }
 
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	// Refresh token received during sign in
+	RefreshToken string `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
 type ForgotPasswordRequest struct {
-	Email string `json:"email"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
 }
 
 type ConfirmForgotPasswordRequest struct {
-	Email       string `json:"email"`
-	Code        string `json:"code"`
-	NewPassword string `json:"new_password"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
+	// Verification code sent to the user's email
+	Code string `json:"code" example:"123456"`
+	// New password to set
+	NewPassword string `json:"new_password" example:"NewPassword123!"`
 }
 
 type SignOutRequest struct {
-	Global bool `json:"global"`
+	// Whether to invalidate tokens on all devices
+	Global bool `json:"global" example:"true"`
 }
 
 func NewAuthHandler() (*AuthHandler, error) {
@@ -133,6 +168,12 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 	// Single debug log for request tracking
 	log.Printf("Processing request: %s %s", request.RequestContext.HTTP.Method, path)
 
+	// Handle Swagger documentation requests
+	if strings.HasPrefix(path, "/swagger/") {
+		return h.handleSwaggerRequest(ctx, request)
+	}
+
+	// Handle regular API endpoints
 	switch path {
 	case "/auth/signup":
 		return h.handleSignUp(ctx, request)
@@ -170,12 +211,16 @@ func validateRequestBody(body string, target interface{}) *events.APIGatewayV2HT
 	return nil
 }
 
-// Add this type at the top with other type definitions
+// APIResponse is the standard response format for all API endpoints
 type APIResponse struct {
-	Success bool        `json:"success"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
+	// Indicates if the operation was successful
+	Success bool `json:"success" example:"true"`
+	// Human-readable message about the result
+	Message string `json:"message" example:"Operation completed successfully"`
+	// Response data (if any)
+	Data interface{} `json:"data,omitempty"`
+	// Error message (if any)
+	Error string `json:"error,omitempty" example:"Invalid input provided"`
 }
 
 // Example of how to modify a handler (showing signup handler as example):
@@ -249,7 +294,16 @@ func sendAPIResponse(statusCode int, success bool, message string, data interfac
 	}
 }
 
-// Then your handlers become much cleaner
+// @Summary Register a new user
+// @Description Creates a new user account with email and password
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body SignUpRequest true "User registration details"
+// @Success 200 {object} APIResponse{data=map[string]interface{}} "Account created successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/signup [post]
 func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signUpReq SignUpRequest
 	if response := validateRequestBody(request.Body, &signUpReq); response != nil {
@@ -260,10 +314,27 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 		return sendAPIResponse(400, false, "", nil, "Email and password are required"), nil
 	}
 
+	// First check if a user with this email already exists
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", signUpReq.Email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error checking for existing user: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) > 0 {
+		return sendAPIResponse(400, false, "", nil, "An account with this email already exists"), nil
+	}
+
 	// Generate a UUID for the username
 	username := uuid.New().String()
 
-	_, err := h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
+	_, err = h.cognitoClient.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 		ClientId: &h.clientID,
 		Username: &username,
 		Password: &signUpReq.Password,
@@ -292,7 +363,17 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 		}, ""), nil
 }
 
-// Example updates for handleSignIn:
+// @Summary Sign in a user
+// @Description Authenticates a user and returns JWT tokens
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body SignInRequest true "User credentials"
+// @Success 200 {object} APIResponse{data=map[string]interface{}} "Successfully authenticated"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Invalid credentials"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/signin [post]
 func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signInReq SignInRequest
 	if response := validateRequestBody(request.Body, &signInReq); response != nil {
@@ -346,6 +427,16 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 		}, ""), nil
 }
 
+// @Summary Get user profile
+// @Description Retrieves the authenticated user's profile information
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} APIResponse{data=UserProfileResponse} "Profile retrieved successfully"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/profile [get]
 func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
@@ -380,6 +471,17 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 	}, ""), nil
 }
 
+// @Summary Refresh authentication tokens
+// @Description Issues new access and ID tokens using a refresh token
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body RefreshTokenRequest true "Refresh token details"
+// @Success 200 {object} APIResponse{data=map[string]interface{}} "Tokens refreshed successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Invalid token"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/refresh [post]
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var refreshReq RefreshTokenRequest
 	if response := validateRequestBody(request.Body, &refreshReq); response != nil {
@@ -424,6 +526,17 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 	return sendAPIResponse(200, true, "Token refreshed successfully", response, ""), nil
 }
 
+// @Summary Confirm user registration
+// @Description Verifies a user account with the confirmation code sent to their email
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body ConfirmSignUpRequest true "Confirmation details"
+// @Success 200 {object} APIResponse "Account confirmed successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 404 {object} APIResponse "Account not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/confirm [post]
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmSignUpRequest
 	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
@@ -501,20 +614,35 @@ func getUsernameFromToken(token string) string {
 }
 
 func main() {
+	// Initialize auth handler
 	handler, err := NewAuthHandler()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Start Lambda handler
 	lambda.Start(handler.HandleRequest)
 }
 
 // Add this after your other request types
 type ConfirmSignUpRequest struct {
-	Email string `json:"email"`
-	Code  string `json:"code"`
+	// User's email address
+	Email string `json:"email" example:"user@example.com"`
+	// Verification code sent to the user's email
+	Code string `json:"code" example:"123456"`
 }
 
-// Add this new handler function
+// @Summary Initiate password reset
+// @Description Sends a password reset code to the user's email
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body ForgotPasswordRequest true "Email details"
+// @Success 200 {object} APIResponse "Password reset code sent"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 404 {object} APIResponse "Account not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/forgot-password [post]
 func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var forgotReq ForgotPasswordRequest
 	if response := validateRequestBody(request.Body, &forgotReq); response != nil {
@@ -559,6 +687,17 @@ func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.A
 	return sendAPIResponse(200, true, "Password reset code sent successfully", nil, ""), nil
 }
 
+// @Summary Complete password reset
+// @Description Resets the user's password using the verification code
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body ConfirmForgotPasswordRequest true "Password reset details"
+// @Success 200 {object} APIResponse "Password reset successful"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 404 {object} APIResponse "Account not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/confirm-forgot-password [post]
 func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmForgotPasswordRequest
 	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
@@ -605,6 +744,17 @@ func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request e
 	return sendAPIResponse(200, true, "Password reset successfully", nil, ""), nil
 }
 
+// @Summary Resend confirmation code
+// @Description Sends a new confirmation code to the user's email
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Param request body ForgotPasswordRequest true "Email details"
+// @Success 200 {object} APIResponse "Confirmation code sent"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 404 {object} APIResponse "Account not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/resend-confirmation [post]
 func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var resendReq struct {
 		Email string `json:"email"`
@@ -652,6 +802,18 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 	return sendAPIResponse(200, true, "Confirmation code resent successfully", nil, ""), nil
 }
 
+// @Summary Sign out user
+// @Description Invalidates the user's tokens
+// @Tags Authentication
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body SignOutRequest true "Sign out details"
+// @Success 200 {object} APIResponse "Signed out successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/signout [post]
 func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract access token
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -683,3 +845,194 @@ func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatew
 	// The client should clear all local storage tokens
 	return sendAPIResponse(200, true, "Successfully signed out", nil, ""), nil
 }
+
+// handleSwaggerRequest handles requests for Swagger documentation
+func (h *AuthHandler) handleSwaggerRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	path := normalizePath(request.RequestContext.HTTP.Path)
+	log.Printf("Swagger request for path: %s", path)
+
+	// Extract stage from the original request path
+	originalPath := request.RequestContext.HTTP.Path
+	stageName := extractStageFromPath(originalPath)
+	log.Printf("Extracted stage: %s from original path: %s", stageName, originalPath)
+
+	// Serve the Swagger UI
+	if path == "/swagger/index.html" {
+		// Modify the Swagger UI HTML to include the correct stage-aware base URL
+		swaggerHtml := strings.Replace(
+			swaggerIndexHTML,
+			"url: \"./doc.json\"",
+			fmt.Sprintf("url: \"./doc.json\", basePath: \"/%s\"", stageName),
+			1,
+		)
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "text/html",
+			},
+			Body: swaggerHtml,
+		}, nil
+	}
+
+	// Serve the Swagger JSON with modified base path
+	if path == "/swagger/doc.json" {
+		jsonContent, err := os.ReadFile("docs/swagger.json")
+		if err != nil {
+			log.Printf("Error reading swagger.json: %v", err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: 500,
+				Headers: map[string]string{
+					"Content-Type": "application/json",
+				},
+				Body: `{"error": "Failed to load API documentation"}`,
+			}, nil
+		}
+
+		// Modify the swagger.json content to include the stage in the basePath
+		var swaggerSpec map[string]interface{}
+		if err := json.Unmarshal(jsonContent, &swaggerSpec); err == nil {
+			if stageName != "" {
+				swaggerSpec["basePath"] = "/" + stageName
+				if modifiedJson, err := json.Marshal(swaggerSpec); err == nil {
+					jsonContent = modifiedJson
+				}
+			}
+		}
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: string(jsonContent),
+		}, nil
+	}
+
+	// Serve the Swagger YAML
+	if path == "/swagger/doc.yaml" {
+		yamlContent, err := os.ReadFile("docs/swagger.yaml")
+		if err != nil {
+			log.Printf("Error reading swagger.yaml: %v", err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: 500,
+				Headers: map[string]string{
+					"Content-Type": "application/yaml",
+				},
+				Body: "error: Failed to load API documentation",
+			}, nil
+		}
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "application/yaml",
+			},
+			Body: string(yamlContent),
+		}, nil
+	}
+
+	// Handle other Swagger UI assets
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: 404,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: `{"error": "Not found"}`,
+	}, nil
+}
+
+// extractStageFromPath extracts the stage name from the original API Gateway path
+func extractStageFromPath(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) >= 2 {
+		return parts[1] // The stage is typically the first part after the leading slash
+	}
+	return ""
+}
+
+// Embedded Swagger UI HTML
+const swaggerIndexHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NounHub Auth API - Swagger UI</title>
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css">
+  <style>
+    html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+    *, *:before, *:after { box-sizing: inherit; }
+    body { margin: 0; background: #fafafa; }
+    .topbar { display: none; }
+    
+    /* Debugging panel */
+    .debug-panel {
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ddd;
+      margin-bottom: 10px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .debug-panel h3 {
+      margin-top: 0;
+      margin-bottom: 5px;
+    }
+    .debug-panel pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="debug-panel">
+    <h3>API Configuration:</h3>
+    <div id="debugInfo"></div>
+  </div>
+  
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      // Get the current URL path components
+      const currentPath = window.location.pathname;
+      const pathParts = currentPath.split('/');
+      const stageName = pathParts.length >= 2 ? pathParts[1] : '';
+      
+      // Show debug info
+      document.getElementById('debugInfo').innerHTML = 
+        '<pre>Current path: ' + currentPath + 
+        '\nStage name: ' + stageName + 
+        '\nAPI doc URL: ./doc.json' +
+        '</pre>';
+      
+      const ui = SwaggerUIBundle({
+        url: "./doc.json",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        displayRequestDuration: true,
+        filter: true,
+        withCredentials: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout",
+        requestInterceptor: (req) => {
+          console.log('Request:', req);
+          return req;
+        },
+        responseInterceptor: (res) => {
+          console.log('Response:', res);
+          return res;
+        }
+      });
+      window.ui = ui;
+    };
+  </script>
+</body>
+</html>`

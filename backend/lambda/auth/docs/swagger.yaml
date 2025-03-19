@@ -1,0 +1,477 @@
+basePath: /
+definitions:
+  main.APIResponse:
+    properties:
+      data:
+        description: Response data (if any)
+      error:
+        description: Error message (if any)
+        example: Invalid input provided
+        type: string
+      message:
+        description: Human-readable message about the result
+        example: Operation completed successfully
+        type: string
+      success:
+        description: Indicates if the operation was successful
+        example: true
+        type: boolean
+    type: object
+  main.ConfirmForgotPasswordRequest:
+    properties:
+      code:
+        description: Verification code sent to the user's email
+        example: "123456"
+        type: string
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+      new_password:
+        description: New password to set
+        example: NewPassword123!
+        type: string
+    type: object
+  main.ConfirmSignUpRequest:
+    properties:
+      code:
+        description: Verification code sent to the user's email
+        example: "123456"
+        type: string
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+    type: object
+  main.ForgotPasswordRequest:
+    properties:
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+    type: object
+  main.RefreshTokenRequest:
+    properties:
+      refresh_token:
+        description: Refresh token received during sign in
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+    type: object
+  main.SignInRequest:
+    properties:
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+      password:
+        description: User's password
+        example: Password123!
+        type: string
+    type: object
+  main.SignOutRequest:
+    properties:
+      global:
+        description: Whether to invalidate tokens on all devices
+        example: true
+        type: boolean
+    type: object
+  main.SignUpRequest:
+    properties:
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+      password:
+        description: User's password (must be at least 6 characters)
+        example: Password123!
+        type: string
+    type: object
+  main.UserProfileResponse:
+    properties:
+      email:
+        description: User's email address
+        example: user@example.com
+        type: string
+      linked_providers:
+        description: List of authentication providers linked to this account
+        example:
+        - '["google"]'
+        items:
+          type: string
+        type: array
+      username:
+        description: User's unique username (UUID)
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    type: object
+info:
+  contact:
+    name: NounHub API Support
+    url: https://nounhub.org
+  description: Authentication service for NounHub providing user management and authentication
+    endpoints
+  title: NounHub Authentication API
+  version: "1.0"
+paths:
+  /auth/confirm:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a user account with the confirmation code sent to their
+        email
+      parameters:
+      - description: Confirmation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ConfirmSignUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Account confirmed successfully
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Confirm user registration
+      tags:
+      - Authentication
+  /auth/confirm-forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Resets the user's password using the verification code
+      parameters:
+      - description: Password reset details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ConfirmForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password reset successful
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Complete password reset
+      tags:
+      - Authentication
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Sends a password reset code to the user's email
+      parameters:
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Password reset code sent
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Initiate password reset
+      tags:
+      - Authentication
+  /auth/google:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates a user with a Google OAuth token
+      parameters:
+      - description: Google OAuth token
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully authenticated with Google
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Sign in with Google
+      tags:
+      - Authentication
+  /auth/profile:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves the authenticated user's profile information
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.UserProfileResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - Authentication
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Issues new access and ID tokens using a refresh token
+      parameters:
+      - description: Refresh token details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tokens refreshed successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Invalid token
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Refresh authentication tokens
+      tags:
+      - Authentication
+  /auth/resend-confirmation:
+    post:
+      consumes:
+      - application/json
+      description: Sends a new confirmation code to the user's email
+      parameters:
+      - description: Email details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Confirmation code sent
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Resend confirmation code
+      tags:
+      - Authentication
+  /auth/signin:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates a user and returns JWT tokens
+      parameters:
+      - description: User credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.SignInRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully authenticated
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Invalid credentials
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Sign in a user
+      tags:
+      - Authentication
+  /auth/signout:
+    post:
+      consumes:
+      - application/json
+      description: Invalidates the user's tokens
+      parameters:
+      - description: Sign out details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.SignOutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Signed out successfully
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Sign out user
+      tags:
+      - Authentication
+  /auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user account with email and password
+      parameters:
+      - description: User registration details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.SignUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Account created successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Register a new user
+      tags:
+      - Authentication
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

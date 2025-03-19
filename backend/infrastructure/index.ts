@@ -5,6 +5,8 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
+// Import the API documentation module
+import * as apiDocs from "./api-docs";
 
 const config = new pulumi.Config();
 const stack = pulumi.getStack();
@@ -257,6 +259,15 @@ const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
     principal: 'apigateway.amazonaws.com',
     sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
+
+// Configure API Gateway to expose Swagger documentation
+const swaggerUiUrl = apiDocs.configureApiDocs(api, integration);
+
+// Export the API documentation URLs for both default API Gateway and custom domain
+export const apiDocsUrls = apiDocs.exportDocUrls(api, stack, domainName);
+
+// Export the Swagger UI URL for easy access (for backward compatibility)
+export const apiDocsUrl = swaggerUiUrl;
 
 //------------------------------------------------------------
 // 6) Custom Domain Configuration
