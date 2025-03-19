@@ -1,4 +1,4 @@
-basePath: /
+basePath: /{stage}
 definitions:
   main.APIResponse:
     properties:

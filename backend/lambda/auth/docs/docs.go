@@ -743,7 +743,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "",
-	BasePath:         "/",
+	BasePath:         "/{stage}",
 	Schemes:          []string{},
 	Title:            "NounHub Authentication API",
 	Description:      "Authentication service for NounHub providing user management and authentication endpoints",
