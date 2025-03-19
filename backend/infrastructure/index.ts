@@ -138,7 +138,37 @@ export const userPoolId = userPool.id;
 export const userPoolClientId = userPoolClient.id;
 
 //------------------------------------------------------------
-// 3) Lambda Function Setup
+// 3) DynamoDB User Table
+//------------------------------------------------------------
+
+// Create DynamoDB User Table
+const userTable = new aws.dynamodb.Table("user-table", {
+    name: `nounhub-user-table-${stack}`,
+    attributes: [
+        { name: "user_id", type: "S" },
+        { name: "email", type: "S" },
+    ],
+    hashKey: "user_id",
+    globalSecondaryIndexes: [
+        {
+            name: "EmailIndex",
+            hashKey: "email",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 5,
+    writeCapacity: 5,
+    tags: commonTags,
+});
+
+// Export the DynamoDB table name
+export const userTableName = userTable.name;
+
+//------------------------------------------------------------
+// 4) Lambda Function Setup
 //------------------------------------------------------------
 
 // Create Lambda function for authentication
@@ -186,14 +216,15 @@ const authFunction = new aws.lambda.Function("auth-function", {
         variables: {
             USER_POOL_ID: userPool.id,
             CLIENT_ID: userPoolClient.id,
-            GOOGLE_CLIENT_ID: config.require("googleClientId")
+            GOOGLE_CLIENT_ID: config.require("googleClientId"),
+            USER_TABLE_NAME: userTable.name
         }
     },
     tags: commonTags
 });
 
 //------------------------------------------------------------
-// 4) API Gateway Configuration
+// 5) API Gateway Configuration
 //------------------------------------------------------------
 
 // Create HTTP API Gateway
@@ -340,6 +371,21 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:GlobalSignOut"       // For the sign out endpoint
                 ],
                 Resource: userPool.arn
+            },
+            {
+                Effect: "Allow",
+                Action: [
+                    "dynamodb:PutItem",
+                    "dynamodb:GetItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
+                ],
+                Resource: [
+                    userTable.arn,
+                    pulumi.interpolate`${userTable.arn}/index/*`
+                ]
             },
             {
                 Effect: "Allow",

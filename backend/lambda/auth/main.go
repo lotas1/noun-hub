@@ -19,13 +19,16 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	_ "github.com/swaggo/swag" // for swagger annotations
@@ -75,8 +78,10 @@ func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request eve
 
 type AuthHandler struct {
 	cognitoClient      *cognitoidentityprovider.Client
+	dynamodbClient     *dynamodb.Client
 	userPoolID         string
 	clientID           string
+	userTableName      string
 	googleOAuthHandler GoogleOAuthHandler
 }
 
@@ -127,6 +132,17 @@ type SignOutRequest struct {
 	Global bool `json:"global" example:"true"`
 }
 
+// Define a User struct for DynamoDB
+type User struct {
+	UserID          string `json:"user_id" dynamodbav:"user_id"`
+	Email           string `json:"email" dynamodbav:"email"`
+	Username        string `json:"username" dynamodbav:"username"`
+	AuthProviders   string `json:"auth_providers" dynamodbav:"auth_providers"`
+	PrimaryProvider string `json:"primary_provider" dynamodbav:"primary_provider"`
+	CreatedAt       string `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt       string `json:"updated_at" dynamodbav:"updated_at"`
+}
+
 func NewAuthHandler() (*AuthHandler, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -134,18 +150,26 @@ func NewAuthHandler() (*AuthHandler, error) {
 	}
 
 	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
+	dynamodbClient := dynamodb.NewFromConfig(cfg)
 	userPoolID := os.Getenv("USER_POOL_ID")
 	clientID := os.Getenv("CLIENT_ID")
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	userTableName := os.Getenv("USER_TABLE_NAME")
 
 	if userPoolID == "" || clientID == "" || googleClientID == "" {
 		return nil, fmt.Errorf("USER_POOL_ID, CLIENT_ID and GOOGLE_CLIENT_ID environment variables must be set")
 	}
 
+	if userTableName == "" {
+		return nil, fmt.Errorf("USER_TABLE_NAME environment variable must be set")
+	}
+
 	return &AuthHandler{
-		cognitoClient: cognitoClient,
-		userPoolID:    userPoolID,
-		clientID:      clientID,
+		cognitoClient:  cognitoClient,
+		dynamodbClient: dynamodbClient,
+		userPoolID:     userPoolID,
+		clientID:       clientID,
+		userTableName:  userTableName,
 		googleOAuthHandler: GoogleOAuthHandler{
 			cognitoClient: cognitoClient,
 			userPoolID:    userPoolID,
@@ -579,7 +603,52 @@ func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.AP
 		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
+	// After successful confirmation, create user record in DynamoDB
+	err = h.createUserRecord(ctx, username, confirmReq.Email)
+	if err != nil {
+		log.Printf("Error creating user record: %v", err)
+		return sendAPIResponse(200, true, "Email verified successfully, but failed to create user record", nil, ""), nil
+	}
+
 	return sendAPIResponse(200, true, "Email verified successfully", nil, ""), nil
+}
+
+// Helper function to create user record in DynamoDB
+func (h *AuthHandler) createUserRecord(ctx context.Context, userID string, email string) error {
+	// Current timestamp in ISO 8601 format
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Create user object
+	user := User{
+		UserID:          userID,
+		Email:           email,
+		Username:        email[:strings.Index(email, "@")], // Use email prefix as username
+		AuthProviders:   "email",
+		PrimaryProvider: "email",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	// Convert user to DynamoDB attribute values
+	item, err := attributevalue.MarshalMap(user)
+	if err != nil {
+		log.Printf("Error marshaling user: %v", err)
+		return err
+	}
+
+	// Put item in DynamoDB
+	_, err = h.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(h.userTableName),
+		Item:      item,
+	})
+
+	if err != nil {
+		log.Printf("Error putting item in DynamoDB: %v", err)
+		return err
+	}
+
+	log.Printf("User record created successfully for user ID: %s", userID)
+	return nil
 }
 
 func getUsernameFromToken(token string) string {
