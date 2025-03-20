@@ -38,10 +38,13 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 - Data Volume: 225 MB/month, 3.6 million reads/month
 
 ## Core Features
-
 ### Authentication
+
 - Email-based user authentication via AWS Cognito
 - User profiles with basic academic information
+- Role-based access control with user groups (students, moderators, admins)
+- Group management for administrative users
+- User assignment to specific permission groups
 
 ### Feed 
 - School-related news and information sharing
@@ -88,6 +91,8 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 ### Backend
 - **Architecture**: AWS Serverless
 - **Framework**: Pulumi with TypeScript
+- **User Management**: AWS Cognito with custom group management
+- **Authorization**: Role-based access control via Cognito groups
 
 ### Mobile
 - **Framework**: Flutter (Dart)
