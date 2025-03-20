@@ -50,6 +50,18 @@ definitions:
         example: user@example.com
         type: string
     type: object
+  main.GroupResponse:
+    description: Response containing group information
+    properties:
+      description:
+        description: Description of the group
+        example: System administrators group
+        type: string
+      name:
+        description: Name of the group
+        example: admin
+        type: string
+    type: object
   main.RefreshTokenRequest:
     properties:
       refresh_token:
@@ -86,6 +98,21 @@ definitions:
         example: Password123!
         type: string
     type: object
+  main.UserGroupResponse:
+    description: Response containing user's group information
+    properties:
+      groups:
+        description: List of groups the user belongs to
+        example:
+        - '["admin"]'
+        items:
+          type: string
+        type: array
+      username:
+        description: Username of the user
+        example: 123e4567-e89b-12d3-a456-426614174000
+        type: string
+    type: object
   main.UserProfileResponse:
     properties:
       email:
@@ -108,8 +135,7 @@ info:
   contact:
     name: NounHub API Support
     url: https://nounhub.org
-  description: Authentication service for NounHub providing user management and authentication
-    endpoints
+  description: Response containing user's group information
   title: NounHub Authentication API
   version: "1.0"
 paths:
@@ -252,6 +278,179 @@ paths:
       summary: Sign in with Google
       tags:
       - Authentication
+  /auth/groups:
+    get:
+      consumes:
+      - application/json
+      description: Lists all available user groups
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Groups retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/main.GroupResponse'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: List all groups
+      tags:
+      - Groups
+  /auth/groups/{groupName}/users:
+    get:
+      consumes:
+      - application/json
+      description: Lists all users in a specific group (admin only)
+      parameters:
+      - description: Name of the group
+        in: path
+        name: groupName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Users in group retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: List users in a group
+      tags:
+      - Groups
+  /auth/groups/{groupName}/users/{username}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes a user from a specific group (admin only)
+      parameters:
+      - description: Name of the group
+        in: path
+        name: groupName
+        required: true
+        type: string
+      - description: Username of the user
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User removed from group successfully
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove user from group
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to a specific group (admin only)
+      parameters:
+      - description: Name of the group
+        in: path
+        name: groupName
+        required: true
+        type: string
+      - description: Username of the user
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User added to group successfully
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Add user to group
+      tags:
+      - Groups
   /auth/profile:
     get:
       consumes:
@@ -468,6 +667,50 @@ paths:
       summary: Register a new user
       tags:
       - Authentication
+  /auth/users/{username}/groups:
+    get:
+      consumes:
+      - application/json
+      description: Lists all groups a user belongs to (admin or self only)
+      parameters:
+      - description: Username of the user
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User groups retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.UserGroupResponse'
+              type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: List user's groups
+      tags:
+      - Groups
 securityDefinitions:
   BearerAuth:
     description: 'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".'

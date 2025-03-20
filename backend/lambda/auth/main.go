@@ -83,6 +83,9 @@ type AuthHandler struct {
 	clientID           string
 	userTableName      string
 	googleOAuthHandler GoogleOAuthHandler
+	adminGroup         string
+	moderatorGroup     string
+	initialAdminEmail  string
 }
 
 type SignUpRequest struct {
@@ -143,6 +146,23 @@ type User struct {
 	UpdatedAt       string `json:"updated_at" dynamodbav:"updated_at"`
 }
 
+// Add new types for group management
+// @Description Response containing group information
+type GroupResponse struct {
+	// Name of the group
+	Name string `json:"name" example:"admin"`
+	// Description of the group
+	Description string `json:"description" example:"System administrators group"`
+}
+
+// @Description Response containing user's group information
+type UserGroupResponse struct {
+	// Username of the user
+	Username string `json:"username" example:"123e4567-e89b-12d3-a456-426614174000"`
+	// List of groups the user belongs to
+	Groups []string `json:"groups" example:"[\"admin\"]"`
+}
+
 func NewAuthHandler() (*AuthHandler, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -155,6 +175,9 @@ func NewAuthHandler() (*AuthHandler, error) {
 	clientID := os.Getenv("CLIENT_ID")
 	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
 	userTableName := os.Getenv("USER_TABLE_NAME")
+	adminGroup := os.Getenv("ADMIN_GROUP")
+	moderatorGroup := os.Getenv("MODERATOR_GROUP")
+	initialAdminEmail := os.Getenv("INITIAL_ADMIN_EMAIL")
 
 	if userPoolID == "" || clientID == "" || googleClientID == "" {
 		return nil, fmt.Errorf("USER_POOL_ID, CLIENT_ID and GOOGLE_CLIENT_ID environment variables must be set")
@@ -164,12 +187,19 @@ func NewAuthHandler() (*AuthHandler, error) {
 		return nil, fmt.Errorf("USER_TABLE_NAME environment variable must be set")
 	}
 
+	if adminGroup == "" || moderatorGroup == "" || initialAdminEmail == "" {
+		return nil, fmt.Errorf("ADMIN_GROUP, MODERATOR_GROUP, and INITIAL_ADMIN_EMAIL environment variables must be set")
+	}
+
 	return &AuthHandler{
-		cognitoClient:  cognitoClient,
-		dynamodbClient: dynamodbClient,
-		userPoolID:     userPoolID,
-		clientID:       clientID,
-		userTableName:  userTableName,
+		cognitoClient:     cognitoClient,
+		dynamodbClient:    dynamodbClient,
+		userPoolID:        userPoolID,
+		clientID:          clientID,
+		userTableName:     userTableName,
+		adminGroup:        adminGroup,
+		moderatorGroup:    moderatorGroup,
+		initialAdminEmail: initialAdminEmail,
 		googleOAuthHandler: GoogleOAuthHandler{
 			cognitoClient: cognitoClient,
 			userPoolID:    userPoolID,
@@ -198,27 +228,40 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 	}
 
 	// Handle regular API endpoints
-	switch path {
-	case "/auth/signup":
+	switch {
+	case path == "/auth/signup":
 		return h.handleSignUp(ctx, request)
-	case "/auth/signin":
+	case path == "/auth/signin":
 		return h.handleSignIn(ctx, request)
-	case "/auth/confirm":
+	case path == "/auth/confirm":
 		return h.handleConfirmSignUp(ctx, request)
-	case "/auth/google":
+	case path == "/auth/google":
 		return h.googleOAuthHandler.HandleGoogleSignIn(ctx, request)
-	case "/auth/profile":
+	case path == "/auth/profile":
 		return h.handleGetProfile(ctx, request)
-	case "/auth/refresh":
+	case path == "/auth/refresh":
 		return h.handleTokenRefresh(ctx, request)
-	case "/auth/resend-confirmation":
+	case path == "/auth/resend-confirmation":
 		return h.handleResendConfirmationCode(ctx, request)
-	case "/auth/forgot-password":
+	case path == "/auth/forgot-password":
 		return h.handleForgotPassword(ctx, request)
-	case "/auth/confirm-forgot-password":
+	case path == "/auth/confirm-forgot-password":
 		return h.handleConfirmForgotPassword(ctx, request)
-	case "/auth/signout":
+	case path == "/auth/signout":
 		return h.handleSignOut(ctx, request)
+	case path == "/auth/groups":
+		return h.handleListGroups(ctx, request)
+	case strings.HasPrefix(path, "/auth/groups/") && strings.Contains(path, "/users"):
+		if request.RequestContext.HTTP.Method == "GET" {
+			return h.handleListUsersInGroup(ctx, request)
+		} else if request.RequestContext.HTTP.Method == "POST" {
+			return h.handleAddUserToGroup(ctx, request)
+		} else if request.RequestContext.HTTP.Method == "DELETE" {
+			return h.handleRemoveUserFromGroup(ctx, request)
+		}
+		return sendAPIResponse(405, false, "", nil, "Method not allowed"), nil
+	case strings.HasPrefix(path, "/auth/users/") && strings.HasSuffix(path, "/groups"):
+		return h.handleListUserGroups(ctx, request)
 	default:
 		return sendAPIResponse(404, false, "", nil,
 			fmt.Sprintf("The requested endpoint '%s' does not exist. Please check the documentation for available endpoints.", path)), nil
@@ -608,6 +651,19 @@ func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.AP
 	if err != nil {
 		log.Printf("Error creating user record: %v", err)
 		return sendAPIResponse(200, true, "Email verified successfully, but failed to create user record", nil, ""), nil
+	}
+
+	// If this is the initial admin email, add user to admin group
+	if confirmReq.Email == h.initialAdminEmail {
+		_, err = h.cognitoClient.AdminAddUserToGroup(ctx, &cognitoidentityprovider.AdminAddUserToGroupInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+			GroupName:  aws.String(h.adminGroup),
+		})
+		if err != nil {
+			log.Printf("Failed to add initial admin to admin group: %v", err)
+			// Don't return error as signup was successful
+		}
 	}
 
 	return sendAPIResponse(200, true, "Email verified successfully", nil, ""), nil
@@ -1105,3 +1161,324 @@ const swaggerIndexHTML = `<!DOCTYPE html>
   </script>
 </body>
 </html>`
+
+// @Summary List all groups
+// @Description Lists all available user groups
+// @Tags Groups
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} APIResponse{data=[]GroupResponse} "Groups retrieved successfully"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/groups [get]
+func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Check if user is authenticated
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// List groups
+	input := &cognitoidentityprovider.ListGroupsInput{
+		UserPoolId: aws.String(h.userPoolID),
+	}
+
+	result, err := h.cognitoClient.ListGroups(ctx, input)
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to list groups"), nil
+	}
+
+	groups := make([]GroupResponse, 0)
+	for _, group := range result.Groups {
+		groups = append(groups, GroupResponse{
+			Name:        aws.ToString(group.GroupName),
+			Description: aws.ToString(group.Description),
+		})
+	}
+
+	return sendAPIResponse(200, true, "Groups retrieved successfully", groups, ""), nil
+}
+
+// @Summary List users in a group
+// @Description Lists all users in a specific group (admin only)
+// @Tags Groups
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param groupName path string true "Name of the group"
+// @Success 200 {object} APIResponse{data=[]string} "Users in group retrieved successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/groups/{groupName}/users [get]
+func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Check if user is authenticated and is an admin
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Extract group name from path
+	pathParts := strings.Split(request.RawPath, "/")
+	if len(pathParts) < 5 {
+		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
+	}
+	groupName := pathParts[4]
+
+	// Check if user is admin
+	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
+	// List users in group
+	input := &cognitoidentityprovider.ListUsersInGroupInput{
+		UserPoolId: aws.String(h.userPoolID),
+		GroupName:  aws.String(groupName),
+	}
+
+	result, err := h.cognitoClient.ListUsersInGroup(ctx, input)
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to list users in group"), nil
+	}
+
+	users := make([]string, 0)
+	for _, user := range result.Users {
+		for _, attr := range user.Attributes {
+			if aws.ToString(attr.Name) == "email" {
+				users = append(users, aws.ToString(attr.Value))
+				break
+			}
+		}
+	}
+
+	return sendAPIResponse(200, true, "Users in group retrieved successfully", users, ""), nil
+}
+
+// @Summary Add user to group
+// @Description Adds a user to a specific group (admin only)
+// @Tags Groups
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param groupName path string true "Name of the group"
+// @Param username path string true "Username of the user"
+// @Success 200 {object} APIResponse "User added to group successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden"
+// @Failure 404 {object} APIResponse "User not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/groups/{groupName}/users/{username} [post]
+func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Check if user is authenticated and is an admin
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Extract group name and username from path
+	pathParts := strings.Split(request.RawPath, "/")
+	if len(pathParts) < 7 {
+		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
+	}
+	groupName := pathParts[4]
+	username := pathParts[6]
+
+	// Check if user is admin
+	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
+	// Check if target user exists
+	_, err = h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	})
+	if err != nil {
+		return sendAPIResponse(404, false, "", nil, "User not found"), nil
+	}
+
+	// Remove user from any existing groups
+	groups, err := h.listUserGroups(ctx, username)
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to list user groups"), nil
+	}
+
+	for _, group := range groups {
+		_, err = h.cognitoClient.AdminRemoveUserFromGroup(ctx, &cognitoidentityprovider.AdminRemoveUserFromGroupInput{
+			UserPoolId: aws.String(h.userPoolID),
+			Username:   aws.String(username),
+			GroupName:  aws.String(group),
+		})
+		if err != nil {
+			return sendAPIResponse(500, false, "", nil, "Failed to remove user from existing group"), nil
+		}
+	}
+
+	// Add user to new group
+	_, err = h.cognitoClient.AdminAddUserToGroup(ctx, &cognitoidentityprovider.AdminAddUserToGroupInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+		GroupName:  aws.String(groupName),
+	})
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to add user to group"), nil
+	}
+
+	return sendAPIResponse(200, true, "User added to group successfully", nil, ""), nil
+}
+
+// @Summary Remove user from group
+// @Description Removes a user from a specific group (admin only)
+// @Tags Groups
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param groupName path string true "Name of the group"
+// @Param username path string true "Username of the user"
+// @Success 200 {object} APIResponse "User removed from group successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden"
+// @Failure 404 {object} APIResponse "User not found"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/groups/{groupName}/users/{username} [delete]
+func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Check if user is authenticated and is an admin
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Extract group name and username from path
+	pathParts := strings.Split(request.RawPath, "/")
+	if len(pathParts) < 7 {
+		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
+	}
+	groupName := pathParts[4]
+	username := pathParts[6]
+
+	// Check if user is admin
+	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
+	// Check if target user exists
+	_, err = h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	})
+	if err != nil {
+		return sendAPIResponse(404, false, "", nil, "User not found"), nil
+	}
+
+	// Remove user from group
+	_, err = h.cognitoClient.AdminRemoveUserFromGroup(ctx, &cognitoidentityprovider.AdminRemoveUserFromGroupInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+		GroupName:  aws.String(groupName),
+	})
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to remove user from group"), nil
+	}
+
+	return sendAPIResponse(200, true, "User removed from group successfully", nil, ""), nil
+}
+
+// @Summary List user's groups
+// @Description Lists all groups a user belongs to (admin or self only)
+// @Tags Groups
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param username path string true "Username of the user"
+// @Success 200 {object} APIResponse{data=UserGroupResponse} "User groups retrieved successfully"
+// @Failure 400 {object} APIResponse "Bad request"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden"
+// @Failure 500 {object} APIResponse "Internal server error"
+// @Router /auth/users/{username}/groups [get]
+func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	// Check if user is authenticated
+	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	if token == "" {
+		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Extract username from path
+	pathParts := strings.Split(request.RawPath, "/")
+	if len(pathParts) < 4 {
+		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
+	}
+	username := pathParts[3]
+
+	// Check if user is admin or requesting their own groups
+	requestingUser := getUsernameFromToken(token)
+	isAdmin, err := h.isUserInGroup(ctx, requestingUser, h.adminGroup)
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to check user permissions"), nil
+	}
+
+	if !isAdmin && requestingUser != username {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
+	// List user's groups
+	groups, err := h.listUserGroups(ctx, username)
+	if err != nil {
+		return sendAPIResponse(500, false, "", nil, "Failed to list user groups"), nil
+	}
+
+	response := UserGroupResponse{
+		Username: username,
+		Groups:   groups,
+	}
+
+	return sendAPIResponse(200, true, "User groups retrieved successfully", response, ""), nil
+}
+
+// Helper function to check if a user is in a group
+func (h *AuthHandler) isUserInGroup(ctx context.Context, username string, groupName string) (bool, error) {
+	input := &cognitoidentityprovider.AdminListGroupsForUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	}
+
+	result, err := h.cognitoClient.AdminListGroupsForUser(ctx, input)
+	if err != nil {
+		return false, err
+	}
+
+	for _, group := range result.Groups {
+		if aws.ToString(group.GroupName) == groupName {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// Helper function to list a user's groups
+func (h *AuthHandler) listUserGroups(ctx context.Context, username string) ([]string, error) {
+	input := &cognitoidentityprovider.AdminListGroupsForUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	}
+
+	result, err := h.cognitoClient.AdminListGroupsForUser(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]string, 0)
+	for _, group := range result.Groups {
+		groups = append(groups, aws.ToString(group.GroupName))
+	}
+
+	return groups, nil
+}

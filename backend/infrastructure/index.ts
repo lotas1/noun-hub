@@ -137,6 +137,25 @@ const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
 export const userPoolId = userPool.id;
 export const userPoolClientId = userPoolClient.id;
 
+// Create Cognito User Groups
+const adminGroup = new aws.cognito.UserGroup("admin-group", {
+    userPoolId: userPool.id,
+    name: "admin",
+    description: "System administrators group",
+    precedence: 1
+});
+
+const moderatorGroup = new aws.cognito.UserGroup("moderator-group", {
+    userPoolId: userPool.id,
+    name: "moderator",
+    description: "Content moderators group",
+    precedence: 50
+});
+
+// Export group names for Lambda function
+export const adminGroupName = adminGroup.name;
+export const moderatorGroupName = moderatorGroup.name;
+
 //------------------------------------------------------------
 // 3) DynamoDB User Table
 //------------------------------------------------------------
@@ -217,7 +236,10 @@ const authFunction = new aws.lambda.Function("auth-function", {
             USER_POOL_ID: userPool.id,
             CLIENT_ID: userPoolClient.id,
             GOOGLE_CLIENT_ID: config.require("googleClientId"),
-            USER_TABLE_NAME: userTable.name
+            USER_TABLE_NAME: userTable.name,
+            ADMIN_GROUP: "admin",
+            MODERATOR_GROUP: "moderator",
+            INITIAL_ADMIN_EMAIL: "offorsomto50@gmail.com"
         }
     },
     tags: commonTags
@@ -263,7 +285,13 @@ const routes = [
     { path: "/auth/resend-confirmation", method: "POST" },
     { path: "/auth/forgot-password", method: "POST" },
     { path: "/auth/confirm-forgot-password", method: "POST" },
-    { path: "/auth/signout", method: "POST" }
+    { path: "/auth/signout", method: "POST" },
+    // Add new group management routes
+    { path: "/auth/groups", method: "GET" },
+    { path: "/auth/groups/{groupName}/users", method: "GET" },
+    { path: "/auth/groups/{groupName}/users/{username}", method: "POST" },
+    { path: "/auth/groups/{groupName}/users/{username}", method: "DELETE" },
+    { path: "/auth/users/{username}/groups", method: "GET" }
 ];
 
 // Create routes
@@ -361,14 +389,20 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:ForgotPassword",
                     "cognito-idp:ConfirmForgotPassword",
                     "cognito-idp:GetUser",
-                    "cognito-idp:AdminGetUser",        // Added this permission
+                    "cognito-idp:AdminGetUser",
                     "cognito-idp:UpdateUserAttributes",
                     "cognito-idp:VerifyUserAttribute",
                     "cognito-idp:ResendConfirmationCode",
-                    "cognito-idp:ListUsers",           // Adding ListUsers permission for email lookup
-                    "cognito-idp:AdminCreateUser",     // For Google OAuth user creation
-                    "cognito-idp:AdminUpdateUserAttributes", // For updating user attributes
-                    "cognito-idp:GlobalSignOut"       // For the sign out endpoint
+                    "cognito-idp:ListUsers",
+                    "cognito-idp:AdminCreateUser",
+                    "cognito-idp:AdminUpdateUserAttributes",
+                    "cognito-idp:GlobalSignOut",
+                    // Add new permissions for group management
+                    "cognito-idp:AdminAddUserToGroup",
+                    "cognito-idp:AdminRemoveUserFromGroup",
+                    "cognito-idp:AdminListGroupsForUser",
+                    "cognito-idp:ListGroups",
+                    "cognito-idp:ListUsersInGroup"
                 ],
                 Resource: userPool.arn
             },
