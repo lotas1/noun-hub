@@ -38,13 +38,16 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 - Data Volume: 225 MB/month, 3.6 million reads/month
 
 ## Core Features
-### Authentication
+### Authentication & Authorization
 
 - Email-based user authentication via AWS Cognito
 - User profiles with basic academic information
-- Role-based access control with user groups (students, moderators, admins)
-- Group management for administrative users
-- User assignment to specific permission groups
+- Role-Based Access Control (RBAC) implementation:
+  - Simple group-based permissions using AWS Cognito groups (moderators, admins)
+  - Application-level access control using group claims from JWT tokens
+  - Permission validation handled within application logic
+- Administrative features:
+  - Basic group management for user role assignment
 
 ### Feed 
 - School-related news and information sharing
