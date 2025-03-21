@@ -1179,6 +1179,12 @@ func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGa
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
+	// Check if user is admin
+	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
 	// List groups
 	input := &cognitoidentityprovider.ListGroupsInput{
 		UserPoolId: aws.String(h.userPoolID),
