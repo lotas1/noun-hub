@@ -1285,13 +1285,33 @@ func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.A
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
-	// Extract group name and username from path
+	// Extract group name and email from path
 	pathParts := strings.Split(request.RawPath, "/")
 	if len(pathParts) < 7 {
 		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
 	}
 	groupName := pathParts[4]
-	username := pathParts[6]
+	email := pathParts[6]
+
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for group operations
+	username := *users.Users[0].Username
 
 	// Check if user is admin
 	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
@@ -1423,6 +1443,11 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 	}
 	username := pathParts[3]
 
+	// Check if the path contains 'users' and extract the actual username
+	if username == "users" && len(pathParts) >= 5 {
+		username = pathParts[4]
+	}
+
 	// Check if user is admin or requesting their own groups
 	requestingUser := getUsernameFromToken(token)
 	isAdmin, err := h.isUserInGroup(ctx, requestingUser, h.adminGroup)
@@ -1434,10 +1459,32 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
 
+	// Find user by email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", username)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for group operations
+	username = *users.Users[0].Username
+
 	// List user's groups
 	groups, err := h.listUserGroups(ctx, username)
 	if err != nil {
-		return sendAPIResponse(500, false, "", nil, "Failed to list user groups"), nil
+		log.Printf("Error in handleListUserGroups for user %s: %v", username, err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
 	response := UserGroupResponse{
@@ -1471,6 +1518,8 @@ func (h *AuthHandler) isUserInGroup(ctx context.Context, username string, groupN
 
 // Helper function to list a user's groups
 func (h *AuthHandler) listUserGroups(ctx context.Context, username string) ([]string, error) {
+	log.Printf("Attempting to list groups for user: %s", username)
+
 	input := &cognitoidentityprovider.AdminListGroupsForUserInput{
 		UserPoolId: aws.String(h.userPoolID),
 		Username:   aws.String(username),
@@ -1478,6 +1527,7 @@ func (h *AuthHandler) listUserGroups(ctx context.Context, username string) ([]st
 
 	result, err := h.cognitoClient.AdminListGroupsForUser(ctx, input)
 	if err != nil {
+		log.Printf("Error listing groups for user %s: %v", username, err)
 		return nil, err
 	}
 
