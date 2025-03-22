@@ -135,6 +135,13 @@ type SignOutRequest struct {
 	Global bool `json:"global" example:"true"`
 }
 
+type ConfirmSignUpRequest struct {
+	// User's email address
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
+	// Verification code sent to the user's email
+	Code string `json:"code" example:"123456"`
+}
+
 // Define a User struct for DynamoDB
 type User struct {
 	UserID          string `json:"user_id" dynamodbav:"user_id"`
@@ -747,14 +754,6 @@ func main() {
 
 	// Start Lambda handler
 	lambda.Start(handler.HandleRequest)
-}
-
-// Add this after your other request types
-type ConfirmSignUpRequest struct {
-	// User's email address
-	Email string `json:"email" example:"offorsomto50@gmail.com"`
-	// Verification code sent to the user's email
-	Code string `json:"code" example:"123456"`
 }
 
 // @Summary Initiate password reset
