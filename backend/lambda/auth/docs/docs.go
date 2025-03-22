@@ -11,7 +11,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "contact": {
             "name": "NounHub API Support",
-            "url": "https://nounhub.org"
+            "url": "https://www.nounhub.org"
         },
         "version": "{{.Version}}"
     },
@@ -364,7 +364,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/groups/{groupName}/users/{username}": {
+        "/auth/groups/{groupName}/users/{email}": {
             "post": {
                 "security": [
                     {
@@ -392,8 +392,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Username of the user",
-                        "name": "username",
+                        "description": "Email of the user",
+                        "name": "email",
                         "in": "path",
                         "required": true
                     }
@@ -464,8 +464,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Username of the user",
-                        "name": "username",
+                        "description": "Email of the user",
+                        "name": "email",
                         "in": "path",
                         "required": true
                     }
@@ -860,14 +860,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/users/{username}/groups": {
+        "/auth/users/{email}/groups": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists all groups a user belongs to (admin or self only)",
+                "description": "Lists all groups a user belongs to (admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -881,8 +881,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Username of the user",
-                        "name": "username",
+                        "description": "Email of the user",
+                        "name": "email",
                         "in": "path",
                         "required": true
                     }
@@ -899,7 +899,10 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/main.UserGroupResponse"
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
                                         }
                                     }
                                 }
@@ -969,7 +972,7 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 },
                 "new_password": {
                     "description": "New password to set",
@@ -989,7 +992,7 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 }
             }
         },
@@ -999,7 +1002,7 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 }
             }
         },
@@ -1035,7 +1038,7 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 },
                 "password": {
                     "description": "User's password",
@@ -1060,33 +1063,12 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 },
                 "password": {
                     "description": "User's password (must be at least 6 characters)",
                     "type": "string",
                     "example": "Password123!"
-                }
-            }
-        },
-        "main.UserGroupResponse": {
-            "description": "Response containing user's group information",
-            "type": "object",
-            "properties": {
-                "groups": {
-                    "description": "List of groups the user belongs to",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "[\"admin\"]"
-                    ]
-                },
-                "username": {
-                    "description": "Username of the user",
-                    "type": "string",
-                    "example": "123e4567-e89b-12d3-a456-426614174000"
                 }
             }
         },
@@ -1096,7 +1078,7 @@ const docTemplate = `{
                 "email": {
                     "description": "User's email address",
                     "type": "string",
-                    "example": "user@example.com"
+                    "example": "offorsomto50@gmail.com"
                 },
                 "linked_providers": {
                     "description": "List of authentication providers linked to this account",

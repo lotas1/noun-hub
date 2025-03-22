@@ -3,7 +3,7 @@
 // @version 1.0
 // @description Authentication service for NounHub providing user management and authentication endpoints
 // @contact.name NounHub API Support
-// @contact.url https://nounhub.org
+// @contact.url https://www.nounhub.org
 // @BasePath /{stage}
 // @securityDefinitions.apikey BearerAuth
 // @in header
@@ -90,21 +90,21 @@ type AuthHandler struct {
 
 type SignUpRequest struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 	// User's password (must be at least 6 characters)
 	Password string `json:"password" example:"Password123!"`
 }
 
 type SignInRequest struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 	// User's password
 	Password string `json:"password" example:"Password123!"`
 }
 
 type UserProfileResponse struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 	// User's unique username (UUID)
 	Username string `json:"username" example:"123e4567-e89b-12d3-a456-426614174000"`
 	// List of authentication providers linked to this account
@@ -118,12 +118,12 @@ type RefreshTokenRequest struct {
 
 type ForgotPasswordRequest struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 }
 
 type ConfirmForgotPasswordRequest struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 	// Verification code sent to the user's email
 	Code string `json:"code" example:"123456"`
 	// New password to set
@@ -752,7 +752,7 @@ func main() {
 // Add this after your other request types
 type ConfirmSignUpRequest struct {
 	// User's email address
-	Email string `json:"email" example:"user@example.com"`
+	Email string `json:"email" example:"offorsomto50@gmail.com"`
 	// Verification code sent to the user's email
 	Code string `json:"code" example:"123456"`
 }
@@ -1270,14 +1270,14 @@ func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events
 // @Produce json
 // @Security BearerAuth
 // @Param groupName path string true "Name of the group"
-// @Param username path string true "Username of the user"
+// @Param email path string true "Email of the user"
 // @Success 200 {object} APIResponse "User added to group successfully"
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 404 {object} APIResponse "User not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups/{groupName}/users/{username} [post]
+// @Router /auth/groups/{groupName}/users/{email} [post]
 func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1365,14 +1365,14 @@ func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.A
 // @Produce json
 // @Security BearerAuth
 // @Param groupName path string true "Name of the group"
-// @Param username path string true "Username of the user"
+// @Param email path string true "Email of the user"
 // @Success 200 {object} APIResponse "User removed from group successfully"
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 404 {object} APIResponse "User not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups/{groupName}/users/{username} [delete]
+// @Router /auth/groups/{groupName}/users/{email} [delete]
 func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1380,13 +1380,33 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
-	// Extract group name and username from path
+	// Extract group name and email from path
 	pathParts := strings.Split(request.RawPath, "/")
 	if len(pathParts) < 7 {
 		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
 	}
 	groupName := pathParts[4]
-	username := pathParts[6]
+	email := pathParts[6]
+
+	// Find the user's UUID username based on email
+	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", email)),
+		Limit:      aws.Int32(1),
+	})
+
+	if err != nil {
+		log.Printf("Error finding user by email: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
+	}
+
+	if len(users.Users) == 0 {
+		return sendAPIResponse(404, false, "", nil, "Account not found"), nil
+	}
+
+	// Use the actual username (UUID) for group operations
+	username := *users.Users[0].Username
 
 	// Check if user is admin
 	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
@@ -1410,59 +1430,45 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 		GroupName:  aws.String(groupName),
 	})
 	if err != nil {
-		return sendAPIResponse(500, false, "", nil, "Failed to remove user from group"), nil
+		log.Printf("Error removing user from group: %v", err)
+		statusCode, errorMessage := handleCognitoError(err)
+		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
-	return sendAPIResponse(200, true, "User removed from group successfully", nil, ""), nil
+	return sendAPIResponse(200, true, fmt.Sprintf("User %s removed from group %s successfully", email, groupName), nil, ""), nil
 }
 
 // @Summary List user's groups
-// @Description Lists all groups a user belongs to (admin or self only)
+// @Description Lists all groups a user belongs to (admin only)
 // @Tags Groups
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param username path string true "Username of the user"
-// @Success 200 {object} APIResponse{data=UserGroupResponse} "User groups retrieved successfully"
+// @Param email path string true "Email of the user"
+// @Success 200 {object} APIResponse{data=[]string} "User groups retrieved successfully"
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/users/{username}/groups [get]
+// @Router /auth/users/{email}/groups [get]
 func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Check if user is authenticated
+	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
-	// Extract username from path
+	// Extract email from path
 	pathParts := strings.Split(request.RawPath, "/")
-	if len(pathParts) < 4 {
+	if len(pathParts) < 5 {
 		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
 	}
-	username := pathParts[3]
+	email := pathParts[4]
 
-	// Check if the path contains 'users' and extract the actual username
-	if username == "users" && len(pathParts) >= 5 {
-		username = pathParts[4]
-	}
-
-	// Check if user is admin or requesting their own groups
-	requestingUser := getUsernameFromToken(token)
-	isAdmin, err := h.isUserInGroup(ctx, requestingUser, h.adminGroup)
-	if err != nil {
-		return sendAPIResponse(500, false, "", nil, "Failed to check user permissions"), nil
-	}
-
-	if !isAdmin && requestingUser != username {
-		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
-	}
-
-	// Find user by email
+	// Find the user's UUID username based on email
 	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{
-		UserPoolId: aws.String(h.userPoolID),
-		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", username)),
+		UserPoolId: &h.userPoolID,
+		Filter:     aws.String(fmt.Sprintf("email = \"%s\"", email)),
 		Limit:      aws.Int32(1),
 	})
 
@@ -1477,22 +1483,32 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 	}
 
 	// Use the actual username (UUID) for group operations
-	username = *users.Users[0].Username
+	username := *users.Users[0].Username
 
-	// List user's groups
-	groups, err := h.listUserGroups(ctx, username)
+	// Check if user is admin
+	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
+	}
+
+	// Get user's groups
+	groups, err := h.cognitoClient.AdminListGroupsForUser(ctx, &cognitoidentityprovider.AdminListGroupsForUserInput{
+		UserPoolId: aws.String(h.userPoolID),
+		Username:   aws.String(username),
+	})
 	if err != nil {
-		log.Printf("Error in handleListUserGroups for user %s: %v", username, err)
+		log.Printf("Error listing user groups: %v", err)
 		statusCode, errorMessage := handleCognitoError(err)
 		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
-	response := UserGroupResponse{
-		Username: username,
-		Groups:   groups,
+	// Extract group names
+	var groupNames []string
+	for _, group := range groups.Groups {
+		groupNames = append(groupNames, *group.GroupName)
 	}
 
-	return sendAPIResponse(200, true, "User groups retrieved successfully", response, ""), nil
+	return sendAPIResponse(200, true, fmt.Sprintf("Groups for user %s retrieved successfully", email), groupNames, ""), nil
 }
 
 // Helper function to check if a user is in a group

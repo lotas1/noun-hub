@@ -25,7 +25,7 @@ definitions:
         type: string
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
       new_password:
         description: New password to set
@@ -40,14 +40,14 @@ definitions:
         type: string
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
     type: object
   main.ForgotPasswordRequest:
     properties:
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
     type: object
   main.GroupResponse:
@@ -73,7 +73,7 @@ definitions:
     properties:
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
       password:
         description: User's password
@@ -91,33 +91,18 @@ definitions:
     properties:
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
       password:
         description: User's password (must be at least 6 characters)
         example: Password123!
         type: string
     type: object
-  main.UserGroupResponse:
-    description: Response containing user's group information
-    properties:
-      groups:
-        description: List of groups the user belongs to
-        example:
-        - '["admin"]'
-        items:
-          type: string
-        type: array
-      username:
-        description: Username of the user
-        example: 123e4567-e89b-12d3-a456-426614174000
-        type: string
-    type: object
   main.UserProfileResponse:
     properties:
       email:
         description: User's email address
-        example: user@example.com
+        example: offorsomto50@gmail.com
         type: string
       linked_providers:
         description: List of authentication providers linked to this account
@@ -134,7 +119,7 @@ definitions:
 info:
   contact:
     name: NounHub API Support
-    url: https://nounhub.org
+    url: https://www.nounhub.org
   description: Response containing user's group information
   title: NounHub Authentication API
   version: "1.0"
@@ -356,7 +341,7 @@ paths:
       summary: List users in a group
       tags:
       - Groups
-  /auth/groups/{groupName}/users/{username}:
+  /auth/groups/{groupName}/users/{email}:
     delete:
       consumes:
       - application/json
@@ -367,9 +352,9 @@ paths:
         name: groupName
         required: true
         type: string
-      - description: Username of the user
+      - description: Email of the user
         in: path
-        name: username
+        name: email
         required: true
         type: string
       produces:
@@ -414,9 +399,9 @@ paths:
         name: groupName
         required: true
         type: string
-      - description: Username of the user
+      - description: Email of the user
         in: path
-        name: username
+        name: email
         required: true
         type: string
       produces:
@@ -667,15 +652,15 @@ paths:
       summary: Register a new user
       tags:
       - Authentication
-  /auth/users/{username}/groups:
+  /auth/users/{email}/groups:
     get:
       consumes:
       - application/json
-      description: Lists all groups a user belongs to (admin or self only)
+      description: Lists all groups a user belongs to (admin only)
       parameters:
-      - description: Username of the user
+      - description: Email of the user
         in: path
-        name: username
+        name: email
         required: true
         type: string
       produces:
@@ -688,7 +673,9 @@ paths:
             - $ref: '#/definitions/main.APIResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/main.UserGroupResponse'
+                  items:
+                    type: string
+                  type: array
               type: object
         "400":
           description: Bad request
