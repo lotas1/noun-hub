@@ -217,7 +217,7 @@ const authFunction = new aws.lambda.Function("auth-function", {
                 const path = require("path");
                 
                 // Get the absolute path to the auth directory
-                const authDir = path.join(__dirname, "../lambda/auth");
+                const authDir = path.join(__dirname, "../lambda/go/auth");
                 
                 // Execute build script
                 execSync("chmod +x build.sh && ./build.sh", {
