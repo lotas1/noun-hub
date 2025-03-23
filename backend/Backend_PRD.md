@@ -36,6 +36,7 @@ This document outlines the technical requirements for the NounHub backend system
 - Cognito for authentication
 - S3 for file storage
 - CloudFront for content delivery
+- And more as needed based on use cases
 
 ## API Requirements
 

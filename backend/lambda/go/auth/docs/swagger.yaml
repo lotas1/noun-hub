@@ -1,7 +1,6 @@
 basePath: /{stage}
 definitions:
   main.APIResponse:
-    description: Standard response format for all API endpoints
     properties:
       data:
         description: Response data (if any)
@@ -31,6 +30,17 @@ definitions:
       new_password:
         description: New password to set
         example: NewPassword123!
+        type: string
+    type: object
+  main.ConfirmSignUpRequest:
+    properties:
+      code:
+        description: Verification code sent to the user's email
+        example: "123456"
+        type: string
+      email:
+        description: User's email address
+        example: offorsomto50@gmail.com
         type: string
     type: object
   main.ForgotPasswordRequest:
@@ -118,14 +128,15 @@ paths:
     post:
       consumes:
       - application/json
-      description: Confirms a user's account using the verification code
+      description: Verifies a user account with the confirmation code sent to their
+        email
       parameters:
       - description: Confirmation details
         in: body
         name: request
         required: true
         schema:
-          type: object
+          $ref: '#/definitions/main.ConfirmSignUpRequest'
       produces:
       - application/json
       responses:
@@ -145,7 +156,7 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Confirm user account
+      summary: Confirm user registration
       tags:
       - Authentication
   /auth/confirm-forgot-password:
@@ -154,7 +165,7 @@ paths:
       - application/json
       description: Resets the user's password using the verification code
       parameters:
-      - description: Password reset confirmation
+      - description: Password reset details
         in: body
         name: request
         required: true
@@ -179,7 +190,7 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Reset password
+      summary: Complete password reset
       tags:
       - Authentication
   /auth/forgot-password:
@@ -188,7 +199,7 @@ paths:
       - application/json
       description: Sends a password reset code to the user's email
       parameters:
-      - description: Password reset request
+      - description: Email details
         in: body
         name: request
         required: true
@@ -213,7 +224,7 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Request password reset
+      summary: Initiate password reset
       tags:
       - Authentication
   /auth/google:
@@ -234,7 +245,13 @@ paths:
         "200":
           description: Successfully authenticated with Google
           schema:
-            $ref: '#/definitions/main.APIResponse'
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
         "400":
           description: Bad request
           schema:
@@ -275,18 +292,18 @@ paths:
             $ref: '#/definitions/main.APIResponse'
       security:
       - BearerAuth: []
-      summary: List groups
+      summary: List all groups
       tags:
       - Groups
-  /auth/groups/{group_name}/users:
+  /auth/groups/{groupName}/users:
     get:
       consumes:
       - application/json
-      description: Lists all users in a specific group
+      description: Lists all users in a specific group (admin only)
       parameters:
-      - description: Group name
+      - description: Name of the group
         in: path
-        name: group_name
+        name: groupName
         required: true
         type: string
       produces:
@@ -321,71 +338,23 @@ paths:
             $ref: '#/definitions/main.APIResponse'
       security:
       - BearerAuth: []
-      summary: List users in group
+      summary: List users in a group
       tags:
       - Groups
-    post:
-      consumes:
-      - application/json
-      description: Adds a user to a specific group
-      parameters:
-      - description: Group name
-        in: path
-        name: group_name
-        required: true
-        type: string
-      - description: User details
-        in: body
-        name: request
-        required: true
-        schema:
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: User added to group successfully
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "404":
-          description: User not found
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Add user to group
-      tags:
-      - Groups
-  /auth/groups/{group_name}/users/{username}:
+  /auth/groups/{groupName}/users/{email}:
     delete:
       consumes:
       - application/json
-      description: Removes a user from a specific group
+      description: Removes a user from a specific group (admin only)
       parameters:
-      - description: Group name
+      - description: Name of the group
         in: path
-        name: group_name
+        name: groupName
         required: true
         type: string
-      - description: Username
+      - description: Email of the user
         in: path
-        name: username
+        name: email
         required: true
         type: string
       produces:
@@ -420,11 +389,58 @@ paths:
       summary: Remove user from group
       tags:
       - Groups
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to a specific group (admin only)
+      parameters:
+      - description: Name of the group
+        in: path
+        name: groupName
+        required: true
+        type: string
+      - description: Email of the user
+        in: path
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User added to group successfully
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Add user to group
+      tags:
+      - Groups
   /auth/profile:
     get:
       consumes:
       - application/json
-      description: Retrieves the profile information for the authenticated user
+      description: Retrieves the authenticated user's profile information
       produces:
       - application/json
       responses:
@@ -449,14 +465,14 @@ paths:
       - BearerAuth: []
       summary: Get user profile
       tags:
-      - Profile
+      - Authentication
   /auth/refresh:
     post:
       consumes:
       - application/json
-      description: Refreshes the access token using a valid refresh token
+      description: Issues new access and ID tokens using a refresh token
       parameters:
-      - description: Refresh token request
+      - description: Refresh token details
         in: body
         name: request
         required: true
@@ -487,21 +503,21 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Refresh access token
+      summary: Refresh authentication tokens
       tags:
       - Authentication
   /auth/resend-confirmation:
     post:
       consumes:
       - application/json
-      description: Resends the account confirmation code to the user's email
+      description: Sends a new confirmation code to the user's email
       parameters:
       - description: Email details
         in: body
         name: request
         required: true
         schema:
-          type: object
+          $ref: '#/definitions/main.ForgotPasswordRequest'
       produces:
       - application/json
       responses:
@@ -528,9 +544,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticates a user with email and password
+      description: Authenticates a user and returns JWT tokens
       parameters:
-      - description: Sign in request
+      - description: User credentials
         in: body
         name: request
         required: true
@@ -542,7 +558,13 @@ paths:
         "200":
           description: Successfully authenticated
           schema:
-            $ref: '#/definitions/main.APIResponse'
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
         "400":
           description: Bad request
           schema:
@@ -555,16 +577,16 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Sign in to an existing account
+      summary: Sign in a user
       tags:
       - Authentication
   /auth/signout:
     post:
       consumes:
       - application/json
-      description: Signs out the user from the current session or all sessions
+      description: Invalidates the user's tokens
       parameters:
-      - description: Sign out request
+      - description: Sign out details
         in: body
         name: request
         required: true
@@ -591,16 +613,16 @@ paths:
             $ref: '#/definitions/main.APIResponse'
       security:
       - BearerAuth: []
-      summary: Sign out
+      summary: Sign out user
       tags:
       - Authentication
   /auth/signup:
     post:
       consumes:
       - application/json
-      description: Creates a new user account with the provided email and password
+      description: Creates a new user account with email and password
       parameters:
-      - description: Sign up request
+      - description: User registration details
         in: body
         name: request
         required: true
@@ -612,7 +634,13 @@ paths:
         "200":
           description: Account created successfully
           schema:
-            $ref: '#/definitions/main.APIResponse'
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
         "400":
           description: Bad request
           schema:
@@ -621,18 +649,18 @@ paths:
           description: Internal server error
           schema:
             $ref: '#/definitions/main.APIResponse'
-      summary: Create a new user account
+      summary: Register a new user
       tags:
       - Authentication
-  /auth/users/{username}/groups:
+  /auth/users/{email}/groups:
     get:
       consumes:
       - application/json
-      description: Lists all groups a user belongs to
+      description: Lists all groups a user belongs to (admin only)
       parameters:
-      - description: Username
+      - description: Email of the user
         in: path
-        name: username
+        name: email
         required: true
         type: string
       produces:
@@ -667,7 +695,7 @@ paths:
             $ref: '#/definitions/main.APIResponse'
       security:
       - BearerAuth: []
-      summary: List user groups
+      summary: List user's groups
       tags:
       - Groups
 securityDefinitions:

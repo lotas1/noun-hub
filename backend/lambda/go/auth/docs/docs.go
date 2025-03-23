@@ -20,7 +20,7 @@ const docTemplate = `{
     "paths": {
         "/auth/confirm": {
             "post": {
-                "description": "Confirms a user's account using the verification code",
+                "description": "Verifies a user account with the confirmation code sent to their email",
                 "consumes": [
                     "application/json"
                 ],
@@ -30,7 +30,7 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Confirm user account",
+                "summary": "Confirm user registration",
                 "parameters": [
                     {
                         "description": "Confirmation details",
@@ -38,7 +38,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/main.ConfirmSignUpRequest"
                         }
                     }
                 ],
@@ -82,10 +82,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Reset password",
+                "summary": "Complete password reset",
                 "parameters": [
                     {
-                        "description": "Password reset confirmation",
+                        "description": "Password reset details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -134,10 +134,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Request password reset",
+                "summary": "Initiate password reset",
                 "parameters": [
                     {
-                        "description": "Password reset request",
+                        "description": "Email details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -202,7 +202,20 @@ const docTemplate = `{
                     "200": {
                         "description": "Successfully authenticated with Google",
                         "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -237,7 +250,7 @@ const docTemplate = `{
                 "tags": [
                     "Groups"
                 ],
-                "summary": "List groups",
+                "summary": "List all groups",
                 "responses": {
                     "200": {
                         "description": "Groups retrieved successfully",
@@ -275,14 +288,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/groups/{group_name}/users": {
+        "/auth/groups/{groupName}/users": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists all users in a specific group",
+                "description": "Lists all users in a specific group (admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -292,12 +305,12 @@ const docTemplate = `{
                 "tags": [
                     "Groups"
                 ],
-                "summary": "List users in group",
+                "summary": "List users in a group",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Group name",
-                        "name": "group_name",
+                        "description": "Name of the group",
+                        "name": "groupName",
                         "in": "path",
                         "required": true
                     }
@@ -349,14 +362,16 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/auth/groups/{groupName}/users/{email}": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds a user to a specific group",
+                "description": "Adds a user to a specific group (admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -370,19 +385,17 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Group name",
-                        "name": "group_name",
+                        "description": "Name of the group",
+                        "name": "groupName",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "User details",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "object"
-                        }
+                        "type": "string",
+                        "description": "Email of the user",
+                        "name": "email",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -423,16 +436,14 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/auth/groups/{group_name}/users/{username}": {
+            },
             "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Removes a user from a specific group",
+                "description": "Removes a user from a specific group (admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -446,15 +457,15 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Group name",
-                        "name": "group_name",
+                        "description": "Name of the group",
+                        "name": "groupName",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Username",
-                        "name": "username",
+                        "description": "Email of the user",
+                        "name": "email",
                         "in": "path",
                         "required": true
                     }
@@ -506,7 +517,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Retrieves the profile information for the authenticated user",
+                "description": "Retrieves the authenticated user's profile information",
                 "consumes": [
                     "application/json"
                 ],
@@ -514,7 +525,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Profile"
+                    "Authentication"
                 ],
                 "summary": "Get user profile",
                 "responses": {
@@ -553,7 +564,7 @@ const docTemplate = `{
         },
         "/auth/refresh": {
             "post": {
-                "description": "Refreshes the access token using a valid refresh token",
+                "description": "Issues new access and ID tokens using a refresh token",
                 "consumes": [
                     "application/json"
                 ],
@@ -563,10 +574,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Refresh access token",
+                "summary": "Refresh authentication tokens",
                 "parameters": [
                     {
-                        "description": "Refresh token request",
+                        "description": "Refresh token details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -618,7 +629,7 @@ const docTemplate = `{
         },
         "/auth/resend-confirmation": {
             "post": {
-                "description": "Resends the account confirmation code to the user's email",
+                "description": "Sends a new confirmation code to the user's email",
                 "consumes": [
                     "application/json"
                 ],
@@ -636,7 +647,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/main.ForgotPasswordRequest"
                         }
                     }
                 ],
@@ -670,7 +681,7 @@ const docTemplate = `{
         },
         "/auth/signin": {
             "post": {
-                "description": "Authenticates a user with email and password",
+                "description": "Authenticates a user and returns JWT tokens",
                 "consumes": [
                     "application/json"
                 ],
@@ -680,10 +691,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Sign in to an existing account",
+                "summary": "Sign in a user",
                 "parameters": [
                     {
-                        "description": "Sign in request",
+                        "description": "User credentials",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -696,7 +707,20 @@ const docTemplate = `{
                     "200": {
                         "description": "Successfully authenticated",
                         "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -727,7 +751,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Signs out the user from the current session or all sessions",
+                "description": "Invalidates the user's tokens",
                 "consumes": [
                     "application/json"
                 ],
@@ -737,10 +761,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Sign out",
+                "summary": "Sign out user",
                 "parameters": [
                     {
-                        "description": "Sign out request",
+                        "description": "Sign out details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -779,7 +803,7 @@ const docTemplate = `{
         },
         "/auth/signup": {
             "post": {
-                "description": "Creates a new user account with the provided email and password",
+                "description": "Creates a new user account with email and password",
                 "consumes": [
                     "application/json"
                 ],
@@ -789,10 +813,10 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Create a new user account",
+                "summary": "Register a new user",
                 "parameters": [
                     {
-                        "description": "Sign up request",
+                        "description": "User registration details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -805,7 +829,20 @@ const docTemplate = `{
                     "200": {
                         "description": "Account created successfully",
                         "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/main.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": true
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "400": {
@@ -823,14 +860,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/users/{username}/groups": {
+        "/auth/users/{email}/groups": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists all groups a user belongs to",
+                "description": "Lists all groups a user belongs to (admin only)",
                 "consumes": [
                     "application/json"
                 ],
@@ -840,12 +877,12 @@ const docTemplate = `{
                 "tags": [
                     "Groups"
                 ],
-                "summary": "List user groups",
+                "summary": "List user's groups",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Username",
-                        "name": "username",
+                        "description": "Email of the user",
+                        "name": "email",
                         "in": "path",
                         "required": true
                     }
@@ -902,7 +939,6 @@ const docTemplate = `{
     },
     "definitions": {
         "main.APIResponse": {
-            "description": "Standard response format for all API endpoints",
             "type": "object",
             "properties": {
                 "data": {
@@ -942,6 +978,21 @@ const docTemplate = `{
                     "description": "New password to set",
                     "type": "string",
                     "example": "NewPassword123!"
+                }
+            }
+        },
+        "main.ConfirmSignUpRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Verification code sent to the user's email",
+                    "type": "string",
+                    "example": "123456"
+                },
+                "email": {
+                    "description": "User's email address",
+                    "type": "string",
+                    "example": "offorsomto50@gmail.com"
                 }
             }
         },
