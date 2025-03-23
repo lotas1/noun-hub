@@ -187,6 +187,144 @@ const userTable = new aws.dynamodb.Table("user-table", {
 export const userTableName = userTable.name;
 
 //------------------------------------------------------------
+// 3.1) DynamoDB Feed Tables
+//------------------------------------------------------------
+
+// Create DynamoDB Post Table
+const postTable = new aws.dynamodb.Table("post-table", {
+    name: `nounhub-post-table-${stack}`,
+    attributes: [
+        { name: "id", type: "S" },
+        { name: "author_id", type: "S" },
+        { name: "category_id", type: "S" },
+        { name: "created_at", type: "S" },
+    ],
+    hashKey: "id",
+    globalSecondaryIndexes: [
+        {
+            name: "AuthorIndex",
+            hashKey: "author_id",
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        },
+        {
+            name: "CategoryIndex",
+            hashKey: "category_id",
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        },
+        {
+            name: "TimeIndex",
+            hashKey: "id", // Not used, just a placeholder
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 5,
+    writeCapacity: 5,
+    tags: commonTags,
+});
+
+// Create DynamoDB Category Table
+const categoryTable = new aws.dynamodb.Table("category-table", {
+    name: `nounhub-category-table-${stack}`,
+    attributes: [
+        { name: "id", type: "S" },
+        { name: "name", type: "S" },
+    ],
+    hashKey: "id",
+    globalSecondaryIndexes: [
+        {
+            name: "NameIndex",
+            hashKey: "name",
+            projectionType: "ALL",
+            readCapacity: 2,
+            writeCapacity: 2,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 2,
+    writeCapacity: 2,
+    tags: commonTags,
+});
+
+// Create DynamoDB Attachment Table
+const attachmentTable = new aws.dynamodb.Table("attachment-table", {
+    name: `nounhub-attachment-table-${stack}`,
+    attributes: [
+        { name: "id", type: "S" },
+        { name: "post_id", type: "S" },
+    ],
+    hashKey: "id",
+    globalSecondaryIndexes: [
+        {
+            name: "PostIndex",
+            hashKey: "post_id",
+            projectionType: "ALL",
+            readCapacity: 2,
+            writeCapacity: 2,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 2,
+    writeCapacity: 2,
+    tags: commonTags,
+});
+
+// Create DynamoDB Like Table
+const likeTable = new aws.dynamodb.Table("like-table", {
+    name: `nounhub-like-table-${stack}`,
+    attributes: [
+        { name: "user_id", type: "S" },
+        { name: "post_id", type: "S" },
+    ],
+    hashKey: "user_id",
+    rangeKey: "post_id",
+    globalSecondaryIndexes: [
+        {
+            name: "PostLikesIndex",
+            hashKey: "post_id",
+            projectionType: "ALL",
+            readCapacity: 2,
+            writeCapacity: 2,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 2,
+    writeCapacity: 2,
+    tags: commonTags,
+});
+
+// Create S3 bucket for feed attachments
+const feedBucket = new aws.s3.Bucket("feed-bucket", {
+    bucket: `nounhub-feed-attachments-${stack}`,
+    acl: "private",
+    corsRules: [
+        {
+            allowedHeaders: ["*"],
+            allowedMethods: ["GET", "PUT", "POST", "DELETE"],
+            allowedOrigins: ["*"],
+            maxAgeSeconds: 3000,
+        },
+    ],
+    tags: commonTags,
+});
+
+// Export Feed table names
+export const postTableName = postTable.name;
+export const categoryTableName = categoryTable.name;
+export const attachmentTableName = attachmentTable.name;
+export const likeTableName = likeTable.name;
+export const feedBucketName = feedBucket.bucket;
+
+//------------------------------------------------------------
 // 4) Lambda Function Setup
 //------------------------------------------------------------
 
@@ -245,6 +383,62 @@ const authFunction = new aws.lambda.Function("auth-function", {
     tags: commonTags
 });
 
+// Create Lambda function for feed
+const feedFunction = new aws.lambda.Function("feed-function", {
+    name: `nounhub-feed-function-${stack}`,
+    runtime: "provided.al2023",
+    handler: "bootstrap",
+    architectures: ["arm64"],
+    role: new aws.iam.Role("feed-lambda-role", {
+        name: `nounhub-feed-lambda-role-${stack}`,
+        assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [{
+                Action: "sts:AssumeRole",
+                Principal: {
+                    Service: "lambda.amazonaws.com"
+                },
+                Effect: "Allow"
+            }]
+        })
+    }).arn,
+    // Compile and package the Go Lambda function during deployment
+    code: new pulumi.asset.AssetArchive({
+        ".": new pulumi.asset.FileArchive(
+            (() => {
+                const { execSync } = require("child_process");
+                const path = require("path");
+                
+                // Get the absolute path to the feed directory
+                const feedDir = path.join(__dirname, "../lambda/go/feed");
+                
+                // Execute build script
+                execSync("chmod +x build.sh && ./build.sh", {
+                    cwd: feedDir,
+                    stdio: "inherit"
+                });
+                
+                // Return the path to the compiled binary
+                return feedDir;
+            })()
+        )
+    }),
+    // Environment variables for Lambda function
+    environment: {
+        variables: {
+            USER_POOL_ID: userPool.id,
+            POST_TABLE_NAME: postTable.name,
+            CATEGORY_TABLE_NAME: categoryTable.name,
+            ATTACHMENT_TABLE_NAME: attachmentTable.name,
+            LIKE_TABLE_NAME: likeTable.name,
+            BUCKET_NAME: feedBucket.bucket,
+            ADMIN_GROUP: "admin",
+            MODERATOR_GROUP: "moderator"
+        }
+    },
+    tags: commonTags
+});
+
 //------------------------------------------------------------
 // 5) API Gateway Configuration
 //------------------------------------------------------------
@@ -265,7 +459,7 @@ const api = new aws.apigatewayv2.Api("auth-api", {
 });
 
 // Create Lambda integration for HTTP API
-const integration = new aws.apigatewayv2.Integration("auth-lambda-integration", {
+const authIntegration = new aws.apigatewayv2.Integration("auth-lambda-integration", {
     apiId: api.id,
     integrationType: "AWS_PROXY",
     integrationUri: authFunction.invokeArn,
@@ -274,8 +468,18 @@ const integration = new aws.apigatewayv2.Integration("auth-lambda-integration", 
     timeoutMilliseconds: 30000,
 });
 
+// Create Lambda integration for Feed API
+const feedIntegration = new aws.apigatewayv2.Integration("feed-lambda-integration", {
+    apiId: api.id,
+    integrationType: "AWS_PROXY",
+    integrationUri: feedFunction.invokeArn,
+    integrationMethod: "POST",
+    payloadFormatVersion: "2.0",
+    timeoutMilliseconds: 30000,
+});
+
 // Create routes for all auth endpoints
-const routes = [
+const authRoutes = [
     { path: "/auth/signup", method: "POST" },
     { path: "/auth/signin", method: "POST" },
     { path: "/auth/confirm", method: "POST" },
@@ -294,12 +498,40 @@ const routes = [
     { path: "/auth/users/{username}/groups", method: "GET" }
 ];
 
-// Create routes
-routes.forEach((route, index) => {
+// Create routes for all feed endpoints
+const feedRoutes = [
+    { path: "/feed/posts", method: "GET" },
+    { path: "/feed/posts", method: "POST" },
+    { path: "/feed/posts/{id}", method: "GET" },
+    { path: "/feed/posts/{id}", method: "PUT" },
+    { path: "/feed/posts/{id}", method: "DELETE" },
+    { path: "/feed/categories", method: "GET" },
+    { path: "/feed/categories", method: "POST" },
+    { path: "/feed/categories/{id}", method: "PUT" },
+    { path: "/feed/categories/{id}", method: "DELETE" },
+    { path: "/feed/posts/{id}/like", method: "POST" },
+    { path: "/feed/posts/{id}/like", method: "DELETE" },
+    { path: "/feed/posts/{id}/attachments", method: "POST" },
+    { path: "/feed/posts/{id}/attachments", method: "GET" },
+    { path: "/feed/attachments/{id}", method: "DELETE" },
+    { path: "/feed/posts/{id}/repost", method: "POST" }
+];
+
+// Create auth routes
+authRoutes.forEach((route, index) => {
     new aws.apigatewayv2.Route(`auth-route-${index}`, {
         apiId: api.id,
         routeKey: `${route.method} ${route.path}`,
-        target: pulumi.interpolate`integrations/${integration.id}`
+        target: pulumi.interpolate`integrations/${authIntegration.id}`
+    });
+});
+
+// Create feed routes
+feedRoutes.forEach((route, index) => {
+    new aws.apigatewayv2.Route(`feed-route-${index}`, {
+        apiId: api.id,
+        routeKey: `${route.method} ${route.path}`,
+        target: pulumi.interpolate`integrations/${feedIntegration.id}`
     });
 });
 
@@ -320,7 +552,7 @@ const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
 });
 
 // Configure API Gateway to expose Swagger documentation
-const swaggerUiUrl = apiDocs.configureApiDocs(api, integration);
+const swaggerUiUrl = apiDocs.configureApiDocs(api, authIntegration);
 
 // Export the API documentation URLs for both default API Gateway and custom domain
 export const apiDocsUrls = apiDocs.exportDocUrls(api, stack, domainName);
@@ -372,7 +604,7 @@ export const apiEndpoint = pulumi.interpolate`${api.apiEndpoint}/${stack}`;
 // 5) IAM Role and Policy Configuration
 //------------------------------------------------------------
 
-// Create IAM role policy for Lambda
+// Create IAM role policy for Auth Lambda
 const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
     name: `nounhub-auth-lambda-role-policy-${stack}`,
     role: authFunction.role.apply(role => role.split("/").pop() as string),
@@ -432,4 +664,78 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
             }
         ]
     }).apply(policy => JSON.stringify(policy))
+});
+
+// Create IAM role policy for Feed Lambda
+const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
+    name: `nounhub-feed-lambda-role-policy-${stack}`,
+    role: feedFunction.role.apply(role => role.split("/").pop() as string),
+    policy: pulumi.output({
+        Version: "2012-10-17",
+        Statement: [
+            {
+                Effect: "Allow",
+                Action: [
+                    "cognito-idp:GetUser",
+                    "cognito-idp:AdminGetUser",
+                    "cognito-idp:ListUsers",
+                    "cognito-idp:ListUsersInGroup"
+                ],
+                Resource: userPool.arn
+            },
+            {
+                Effect: "Allow",
+                Action: [
+                    "dynamodb:PutItem",
+                    "dynamodb:GetItem",
+                    "dynamodb:UpdateItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:BatchWriteItem"
+                ],
+                Resource: [
+                    postTable.arn,
+                    pulumi.interpolate`${postTable.arn}/index/*`,
+                    categoryTable.arn,
+                    pulumi.interpolate`${categoryTable.arn}/index/*`,
+                    attachmentTable.arn,
+                    pulumi.interpolate`${attachmentTable.arn}/index/*`,
+                    likeTable.arn,
+                    pulumi.interpolate`${likeTable.arn}/index/*`
+                ]
+            },
+            {
+                Effect: "Allow",
+                Action: [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:DeleteObject",
+                    "s3:ListBucket"
+                ],
+                Resource: [
+                    feedBucket.arn,
+                    pulumi.interpolate`${feedBucket.arn}/*`
+                ]
+            },
+            {
+                Effect: "Allow",
+                Action: [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                Resource: "arn:aws:logs:*:*:*"
+            }
+        ]
+    }).apply(policy => JSON.stringify(policy))
+});
+
+// Add Lambda permission for Feed API Gateway
+const feedLambdaPermission = new aws.lambda.Permission('feed-lambda-permission', {
+    action: 'lambda:InvokeFunction',
+    function: feedFunction.arn,
+    principal: 'apigateway.amazonaws.com',
+    sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
