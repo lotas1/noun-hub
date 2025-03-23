@@ -3,6 +3,14 @@
 # Exit on any error
 set -e
 
+# Generate Swagger documentation
+echo "Generating Swagger documentation..."
+if ! command -v ~/go/bin/swag &> /dev/null; then
+    echo "Installing swag..."
+    go install github.com/swaggo/swag/cmd/swag@latest
+fi
+~/go/bin/swag init
+
 # Define variables
 OUTPUT_NAME="bootstrap"
 GOOS=linux

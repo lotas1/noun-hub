@@ -1,0 +1,725 @@
+basePath: /{stage}
+definitions:
+  main.APIResponse:
+    properties:
+      data: {}
+      error:
+        type: string
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  main.Attachment:
+    properties:
+      created_at:
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      file_type:
+        type: string
+      has_thumbnail:
+        type: boolean
+      id:
+        type: string
+      post_id:
+        type: string
+      s3_key:
+        type: string
+      thumbnail_key:
+        type: string
+    type: object
+  main.Category:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  main.CreateCategoryRequest:
+    properties:
+      name:
+        example: TMA
+        type: string
+    type: object
+  main.CreatePostRequest:
+    properties:
+      body:
+        example: All TMAs for semester 1 are due by Monday.
+        type: string
+      category_id:
+        example: cat-123
+        type: string
+      title:
+        example: Important TMA Announcement
+        type: string
+    type: object
+  main.Post:
+    properties:
+      author_id:
+        type: string
+      body:
+        type: string
+      category_id:
+        type: string
+      created_at:
+        type: string
+      has_attachment:
+        type: boolean
+      id:
+        type: string
+      likes:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  main.UpdatePostRequest:
+    properties:
+      body:
+        example: All TMAs for semester 1 are due by next Friday.
+        type: string
+      category_id:
+        example: cat-123
+        type: string
+      title:
+        example: Updated TMA Announcement
+        type: string
+    type: object
+info:
+  contact:
+    name: NounHub API Support
+    url: https://www.nounhub.org
+  description: Feed service for NounHub providing school news and announcements
+  title: NounHub Feed API
+  version: "1.0"
+paths:
+  /feed/attachments/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an attachment
+      parameters:
+      - description: Attachment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Attachment deleted
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not post owner or admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Attachment not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete attachment
+      tags:
+      - Attachments
+  /feed/categories:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of all categories
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful operation
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/main.Category'
+                  type: array
+              type: object
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Get all categories
+      tags:
+      - Categories
+    post:
+      consumes:
+      - application/json
+      description: Create a new category with the provided name
+      parameters:
+      - description: Category information
+        in: body
+        name: category
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Category created
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Category'
+              type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new category
+      tags:
+      - Categories
+  /feed/categories/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an existing category
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Category deleted
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Category not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a category
+      tags:
+      - Categories
+    put:
+      consumes:
+      - application/json
+      description: Update an existing category with a new name
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated category information
+        in: body
+        name: category
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Category updated
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Category'
+              type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Category not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a category
+      tags:
+      - Categories
+  /feed/posts:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of posts, optionally filtered by category or author
+      parameters:
+      - description: Filter by category ID
+        in: query
+        name: category_id
+        type: string
+      - description: Filter by author ID
+        in: query
+        name: author_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful operation
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/main.Post'
+                  type: array
+              type: object
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Get all posts
+      tags:
+      - Posts
+    post:
+      consumes:
+      - application/json
+      description: Create a new post with the provided information
+      parameters:
+      - description: Post information
+        in: body
+        name: post
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Post created
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Post'
+              type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new post
+      tags:
+      - Posts
+  /feed/posts/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an existing post
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Post deleted
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not post owner or admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a post
+      tags:
+      - Posts
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific post by its ID
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful operation
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Post'
+              type: object
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Get a post by ID
+      tags:
+      - Posts
+    put:
+      consumes:
+      - application/json
+      description: Update an existing post with new information
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated post information
+        in: body
+        name: post
+        required: true
+        schema:
+          $ref: '#/definitions/main.UpdatePostRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Post updated
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Post'
+              type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not post owner or admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a post
+      tags:
+      - Posts
+  /feed/posts/{id}/attachments:
+    get:
+      consumes:
+      - application/json
+      description: Get all attachments for a post
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of attachments
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/main.Attachment'
+                  type: array
+              type: object
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      summary: Get post attachments
+      tags:
+      - Attachments
+    post:
+      consumes:
+      - application/json
+      description: Add a file attachment to a post
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Base64 encoded file content with metadata
+        in: body
+        name: attachment
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Attachment added
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Attachment'
+              type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not post owner or admin
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Add attachment to post
+      tags:
+      - Attachments
+  /feed/posts/{id}/like:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a like from a post
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Post unliked
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Post not found or not liked
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Unlike a post
+      tags:
+      - Likes
+    post:
+      consumes:
+      - application/json
+      description: Add a like to a post
+      parameters:
+      - description: Post ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Post liked
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "409":
+          description: Post already liked
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Like a post
+      tags:
+      - Likes
+  /feed/posts/{id}/repost:
+    post:
+      consumes:
+      - application/json
+      description: Create a new post that references an existing post (repost)
+      parameters:
+      - description: Post ID to repost
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Repost created
+          schema:
+            allOf:
+            - $ref: '#/definitions/main.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/main.Post'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "403":
+          description: Forbidden - not admin or moderator
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "404":
+          description: Original post not found
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/main.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Repost a post
+      tags:
+      - Posts
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

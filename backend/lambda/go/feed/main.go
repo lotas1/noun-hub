@@ -183,6 +183,11 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 		path = "/" + strings.Join(parts[2:], "/")
 	}
 
+	// Handle Swagger documentation requests - now with /feed prefix
+	if strings.Contains(path, "/feed/swagger/") {
+		return h.handleSwaggerRequest(ctx, request)
+	}
+
 	// Extract user claims from JWT token
 	var claims *Claims
 	if authHeader, ok := request.Headers["authorization"]; ok {
@@ -318,11 +323,20 @@ func isModerator(claims *Claims) bool {
 
 // Check if the endpoint doesn't require authentication
 func isPublicEndpoint(method, path string) bool {
-	// Only GET /feed/posts and GET /feed/categories are public
-	return (method == "GET" && (path == "/feed/posts" || path == "/feed/categories"))
+	// Only GET requests to feed posts and categories are public
+	return method == "GET" && (strings.HasPrefix(path, "/feed/posts") || strings.HasPrefix(path, "/feed/categories"))
 }
 
-// Function stubs for handlers (to be implemented)
+// @Summary Get all posts
+// @Description Retrieve a list of posts, optionally filtered by category or author
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param category_id query string false "Filter by category ID"
+// @Param author_id query string false "Filter by author ID"
+// @Success 200 {object} APIResponse{data=[]Post} "Successful operation"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts [get]
 func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Get query parameters
 	categoryID := request.QueryStringParameters["category"]
@@ -412,6 +426,16 @@ func sortPostsByDate(posts []Post) {
 	}
 }
 
+// @Summary Get a post by ID
+// @Description Retrieve a specific post by its ID
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Success 200 {object} APIResponse{data=Post} "Successful operation"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id} [get]
 func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract post ID from path
 	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
@@ -449,6 +473,18 @@ func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatew
 	return sendAPIResponse(200, true, "Post retrieved successfully", post, ""), nil
 }
 
+// @Summary Create a new post
+// @Description Create a new post with the provided information
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param post body CreatePostRequest true "Post information"
+// @Security BearerAuth
+// @Success 201 {object} APIResponse{data=Post} "Post created"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts [post]
 func (h *FeedHandler) handleCreatePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can create posts
 	if !isModerator(claims) {
@@ -529,6 +565,21 @@ func (h *FeedHandler) categoryExists(ctx context.Context, categoryID string) (bo
 	return getItemOutput.Item != nil, nil
 }
 
+// @Summary Update a post
+// @Description Update an existing post with new information
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Param post body UpdatePostRequest true "Updated post information"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse{data=Post} "Post updated"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id} [put]
 func (h *FeedHandler) handleUpdatePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can update posts
 	if !isModerator(claims) {
@@ -653,6 +704,19 @@ func (h *FeedHandler) getUserGroups(ctx context.Context, username string) ([]str
 	return groups, nil
 }
 
+// @Summary Delete a post
+// @Description Delete an existing post
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse "Post deleted"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id} [delete]
 func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete posts
 	if !isModerator(claims) {
@@ -784,6 +848,14 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 	return sendAPIResponse(200, true, "Post deleted successfully", nil, ""), nil
 }
 
+// @Summary Get all categories
+// @Description Retrieve a list of all categories
+// @Tags Categories
+// @Accept json
+// @Produce json
+// @Success 200 {object} APIResponse{data=[]Category} "Successful operation"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/categories [get]
 func (h *FeedHandler) handleGetCategories(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Scan all categories
 	scanOutput, err := h.dynamodbClient.Scan(ctx, &dynamodb.ScanInput{
@@ -805,6 +877,19 @@ func (h *FeedHandler) handleGetCategories(ctx context.Context, request events.AP
 	return sendAPIResponse(200, true, "Categories retrieved successfully", categories, ""), nil
 }
 
+// @Summary Create a new category
+// @Description Create a new category with the provided name
+// @Tags Categories
+// @Accept json
+// @Produce json
+// @Param category body CreateCategoryRequest true "Category information"
+// @Security BearerAuth
+// @Success 201 {object} APIResponse{data=Category} "Category created"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not admin"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/categories [post]
 func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can create categories
 	if !isModerator(claims) {
@@ -871,6 +956,21 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	return sendAPIResponse(201, true, "Category created successfully", category, ""), nil
 }
 
+// @Summary Update a category
+// @Description Update an existing category with a new name
+// @Tags Categories
+// @Accept json
+// @Produce json
+// @Param id path string true "Category ID"
+// @Param category body CreateCategoryRequest true "Updated category information"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse{data=Category} "Category updated"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not admin"
+// @Failure 404 {object} APIResponse "Category not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/categories/{id} [put]
 func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can update categories
 	if !isModerator(claims) {
@@ -971,6 +1071,19 @@ func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.A
 	return sendAPIResponse(200, true, "Category updated successfully", category, ""), nil
 }
 
+// @Summary Delete a category
+// @Description Delete an existing category
+// @Tags Categories
+// @Accept json
+// @Produce json
+// @Param id path string true "Category ID"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse "Category deleted"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not admin"
+// @Failure 404 {object} APIResponse "Category not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/categories/{id} [delete]
 func (h *FeedHandler) handleDeleteCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete categories
 	if !isModerator(claims) {
@@ -1038,6 +1151,20 @@ func (h *FeedHandler) handleDeleteCategory(ctx context.Context, request events.A
 	return sendAPIResponse(200, true, "Category deleted successfully", nil, ""), nil
 }
 
+// @Summary Like a post
+// @Description Add a like to a post
+// @Tags Likes
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse "Post liked"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 409 {object} APIResponse "Post already liked"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id}/like [post]
 func (h *FeedHandler) handleLikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// All authenticated users can like posts
 	if claims == nil {
@@ -1141,6 +1268,19 @@ func (h *FeedHandler) handleLikePost(ctx context.Context, request events.APIGate
 	return sendAPIResponse(200, true, "Post liked successfully", updatedPost, ""), nil
 }
 
+// @Summary Unlike a post
+// @Description Remove a like from a post
+// @Tags Likes
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse "Post unliked"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 404 {object} APIResponse "Post not found or not liked"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id}/like [delete]
 func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// All authenticated users can unlike posts they've liked
 	if claims == nil {
@@ -1234,6 +1374,21 @@ func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGa
 	return sendAPIResponse(200, true, "Post unliked successfully", updatedPost, ""), nil
 }
 
+// @Summary Add attachment to post
+// @Description Add a file attachment to a post
+// @Tags Attachments
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Param attachment body string true "Base64 encoded file content with metadata"
+// @Security BearerAuth
+// @Success 201 {object} APIResponse{data=Attachment} "Attachment added"
+// @Failure 400 {object} APIResponse "Invalid input"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id}/attachments [post]
 func (h *FeedHandler) handleAddAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can add attachments
 	if !isModerator(claims) {
@@ -1244,11 +1399,34 @@ func (h *FeedHandler) handleAddAttachment(ctx context.Context, request events.AP
 	return sendAPIResponse(201, true, "Attachment added successfully", Attachment{}, ""), nil
 }
 
+// @Summary Get post attachments
+// @Description Get all attachments for a post
+// @Tags Attachments
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID"
+// @Success 200 {object} APIResponse{data=[]Attachment} "List of attachments"
+// @Failure 404 {object} APIResponse "Post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id}/attachments [get]
 func (h *FeedHandler) handleGetAttachments(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// TODO: Implement get attachments logic
 	return sendAPIResponse(200, true, "Attachments retrieved successfully", []Attachment{}, ""), nil
 }
 
+// @Summary Delete attachment
+// @Description Delete an attachment
+// @Tags Attachments
+// @Accept json
+// @Produce json
+// @Param id path string true "Attachment ID"
+// @Security BearerAuth
+// @Success 200 {object} APIResponse "Attachment deleted"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
+// @Failure 404 {object} APIResponse "Attachment not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/attachments/{id} [delete]
 func (h *FeedHandler) handleDeleteAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete attachments
 	if !isModerator(claims) {
@@ -1259,6 +1437,19 @@ func (h *FeedHandler) handleDeleteAttachment(ctx context.Context, request events
 	return sendAPIResponse(200, true, "Attachment deleted successfully", nil, ""), nil
 }
 
+// @Summary Repost a post
+// @Description Create a new post that references an existing post (repost)
+// @Tags Posts
+// @Accept json
+// @Produce json
+// @Param id path string true "Post ID to repost"
+// @Security BearerAuth
+// @Success 201 {object} APIResponse{data=Post} "Repost created"
+// @Failure 401 {object} APIResponse "Unauthorized"
+// @Failure 403 {object} APIResponse "Forbidden - not admin or moderator"
+// @Failure 404 {object} APIResponse "Original post not found"
+// @Failure 500 {object} APIResponse "Server error"
+// @Router /feed/posts/{id}/repost [post]
 func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can repost
 	if !isModerator(claims) {
@@ -1283,3 +1474,205 @@ func decodeBase64(encodedString string) ([]byte, error) {
 	// For this demo, we're just returning the string as bytes
 	return []byte(encodedString), nil
 }
+
+// handleSwaggerRequest handles requests for Swagger documentation
+func (h *FeedHandler) handleSwaggerRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	path := request.RequestContext.HTTP.Path
+	parts := strings.Split(path, "/")
+
+	// The path will now be like /{stage}/feed/swagger/... so we need to adjust our extraction
+	// Find the "feed" part and adjust the path accordingly
+	feedIndex := -1
+	for i, part := range parts {
+		if part == "feed" {
+			feedIndex = i
+			break
+		}
+	}
+
+	// If we found "feed" in the path, adjust to get the swagger part
+	if feedIndex >= 0 && feedIndex+1 < len(parts) {
+		// Extract the swagger part of the path (after /feed)
+		path = "/" + strings.Join(parts[feedIndex+1:], "/")
+	}
+
+	log.Printf("Feed Swagger request for path: %s", path)
+
+	// Extract stage from the original request path
+	originalPath := request.RequestContext.HTTP.Path
+	stageName := ""
+	if len(parts) >= 2 {
+		stageName = parts[1] // The stage is typically the first part after the leading slash
+	}
+	log.Printf("Extracted stage: %s from original path: %s", stageName, originalPath)
+
+	// Serve the Swagger UI
+	if path == "/swagger/index.html" {
+		// Modify the Swagger UI HTML to include the correct stage-aware base URL
+		swaggerHtml := strings.Replace(
+			swaggerIndexHTML,
+			"url: \"./doc.json\"",
+			fmt.Sprintf("url: \"./doc.json\", basePath: \"/%s/feed\"", stageName),
+			1,
+		)
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "text/html",
+			},
+			Body: swaggerHtml,
+		}, nil
+	}
+
+	// Serve the Swagger JSON with modified base path
+	if path == "/swagger/doc.json" {
+		jsonContent, err := os.ReadFile("docs/swagger.json")
+		if err != nil {
+			log.Printf("Error reading swagger.json: %v", err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: 500,
+				Headers: map[string]string{
+					"Content-Type": "application/json",
+				},
+				Body: `{"error": "Failed to load API documentation"}`,
+			}, nil
+		}
+
+		// Modify the swagger.json content to include the stage and feed in the basePath
+		var swaggerSpec map[string]interface{}
+		if err := json.Unmarshal(jsonContent, &swaggerSpec); err == nil {
+			if stageName != "" {
+				swaggerSpec["basePath"] = "/" + stageName + "/feed"
+				if modifiedJson, err := json.Marshal(swaggerSpec); err == nil {
+					jsonContent = modifiedJson
+				}
+			}
+		}
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: string(jsonContent),
+		}, nil
+	}
+
+	// Serve the Swagger YAML
+	if path == "/swagger/doc.yaml" {
+		yamlContent, err := os.ReadFile("docs/swagger.yaml")
+		if err != nil {
+			log.Printf("Error reading swagger.yaml: %v", err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: 500,
+				Headers: map[string]string{
+					"Content-Type": "application/yaml",
+				},
+				Body: "error: Failed to load API documentation",
+			}, nil
+		}
+
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "application/yaml",
+			},
+			Body: string(yamlContent),
+		}, nil
+	}
+
+	// Handle other Swagger UI assets
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: 404,
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		Body: `{"error": "Not found"}`,
+	}, nil
+}
+
+// Embedded Swagger UI HTML
+const swaggerIndexHTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NounHub Feed API - Swagger UI</title>
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css">
+  <style>
+    html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+    *, *:before, *:after { box-sizing: inherit; }
+    body { margin: 0; background: #fafafa; }
+    .topbar { display: none; }
+    
+    /* Debugging panel */
+    .debug-panel {
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ddd;
+      margin-bottom: 10px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .debug-panel h3 {
+      margin-top: 0;
+      margin-bottom: 5px;
+    }
+    .debug-panel pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="debug-panel">
+    <h3>API Configuration:</h3>
+    <div id="debugInfo"></div>
+  </div>
+  
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      // Get the current URL path components
+      const urlPath = window.location.pathname;
+      const pathParts = urlPath.split('/');
+      
+      // Determine the base path - this is typically the stage name in API Gateway
+      let basePath = '';
+      if (pathParts.length >= 2) {
+        basePath = '/' + pathParts[1];
+      }
+      
+      // Display debug info
+      document.getElementById('debugInfo').innerText = 'URL: ' + window.location.href + '\nBase Path: ' + basePath;
+      
+      // Configure Swagger UI
+      const ui = SwaggerUIBundle({
+        url: "./doc.json",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout",
+        displayRequestDuration: true,
+        defaultModelsExpandDepth: 2,
+        defaultModelExpandDepth: 2,
+        docExpansion: 'list',
+        showExtensions: true,
+        showCommonExtensions: true
+      });
+      
+      window.ui = ui;
+    };
+  </script>
+</body>
+</html>
+`

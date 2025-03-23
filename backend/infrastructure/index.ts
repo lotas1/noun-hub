@@ -551,8 +551,12 @@ const lambdaPermission = new aws.lambda.Permission('auth-lambda-permission', {
     sourceArn: pulumi.interpolate`${api.executionArn}/*/*/*`
 });
 
+
 // Configure API Gateway to expose Swagger documentation
-const swaggerUiUrl = apiDocs.configureApiDocs(api, authIntegration);
+const swaggerUiUrl = apiDocs.configureApiDocs(api, authIntegration, "auth-", "/auth");
+
+// Add Swagger routes for the feed API as well
+apiDocs.configureApiDocs(api, feedIntegration, "feed-", "/feed");
 
 // Export the API documentation URLs for both default API Gateway and custom domain
 export const apiDocsUrls = apiDocs.exportDocUrls(api, stack, domainName);

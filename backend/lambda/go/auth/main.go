@@ -229,8 +229,8 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 	// Single debug log for request tracking
 	log.Printf("Processing request: %s %s", request.RequestContext.HTTP.Method, path)
 
-	// Handle Swagger documentation requests
-	if strings.HasPrefix(path, "/swagger/") {
+	// Handle Swagger documentation requests - now with /auth prefix
+	if strings.Contains(path, "/auth/swagger/") {
 		return h.handleSwaggerRequest(ctx, request)
 	}
 
@@ -972,8 +972,29 @@ func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatew
 
 // handleSwaggerRequest handles requests for Swagger documentation
 func (h *AuthHandler) handleSwaggerRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	path := normalizePath(request.RequestContext.HTTP.Path)
-	log.Printf("Swagger request for path: %s", path)
+	path := request.RequestContext.HTTP.Path
+
+	// The path will now be like /{stage}/auth/swagger/... so we need to adjust our extraction
+	parts := strings.Split(path, "/")
+
+	// Find the "auth" part and adjust the path accordingly
+	authIndex := -1
+	for i, part := range parts {
+		if part == "auth" {
+			authIndex = i
+			break
+		}
+	}
+
+	// If we found "auth" in the path, adjust to get the swagger part
+	if authIndex >= 0 && authIndex+1 < len(parts) {
+		// Extract the swagger part of the path (after /auth)
+		path = "/" + strings.Join(parts[authIndex+1:], "/")
+	} else {
+		path = normalizePath(path)
+	}
+
+	log.Printf("Auth Swagger request for path: %s", path)
 
 	// Extract stage from the original request path
 	originalPath := request.RequestContext.HTTP.Path
@@ -986,7 +1007,7 @@ func (h *AuthHandler) handleSwaggerRequest(ctx context.Context, request events.A
 		swaggerHtml := strings.Replace(
 			swaggerIndexHTML,
 			"url: \"./doc.json\"",
-			fmt.Sprintf("url: \"./doc.json\", basePath: \"/%s\"", stageName),
+			fmt.Sprintf("url: \"./doc.json\", basePath: \"/%s/auth\"", stageName),
 			1,
 		)
 
@@ -1013,11 +1034,11 @@ func (h *AuthHandler) handleSwaggerRequest(ctx context.Context, request events.A
 			}, nil
 		}
 
-		// Modify the swagger.json content to include the stage in the basePath
+		// Modify the swagger.json content to include the stage and auth in the basePath
 		var swaggerSpec map[string]interface{}
 		if err := json.Unmarshal(jsonContent, &swaggerSpec); err == nil {
 			if stageName != "" {
-				swaggerSpec["basePath"] = "/" + stageName
+				swaggerSpec["basePath"] = "/" + stageName + "/auth"
 				if modifiedJson, err := json.Marshal(swaggerSpec); err == nil {
 					jsonContent = modifiedJson
 				}
