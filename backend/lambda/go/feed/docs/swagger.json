@@ -9,9 +9,9 @@
         },
         "version": "1.0"
     },
-    "basePath": "/{stage}",
+    "basePath": "/{stage}/feed",
     "paths": {
-        "/feed/attachments/{id}": {
+        "/attachments/{id}": {
             "delete": {
                 "security": [
                     {
@@ -72,7 +72,7 @@
                 }
             }
         },
-        "/feed/categories": {
+        "/categories": {
             "get": {
                 "description": "Retrieve a list of all categories",
                 "consumes": [
@@ -189,7 +189,7 @@
                 }
             }
         },
-        "/feed/categories/{id}": {
+        "/categories/{id}": {
             "put": {
                 "security": [
                     {
@@ -336,7 +336,7 @@
                 }
             }
         },
-        "/feed/posts": {
+        "/posts": {
             "get": {
                 "description": "Retrieve a list of posts, optionally filtered by category or author",
                 "consumes": [
@@ -461,7 +461,7 @@
                 }
             }
         },
-        "/feed/posts/{id}": {
+        "/posts/{id}": {
             "get": {
                 "description": "Retrieve a specific post by its ID",
                 "consumes": [
@@ -662,7 +662,7 @@
                 }
             }
         },
-        "/feed/posts/{id}/attachments": {
+        "/posts/{id}/attachments": {
             "get": {
                 "description": "Get all attachments for a post",
                 "consumes": [
@@ -807,7 +807,7 @@
                 }
             }
         },
-        "/feed/posts/{id}/like": {
+        "/posts/{id}/like": {
             "post": {
                 "security": [
                     {
@@ -933,7 +933,7 @@
                 }
             }
         },
-        "/feed/posts/{id}/repost": {
+        "/posts/{id}/repost": {
             "post": {
                 "security": [
                     {

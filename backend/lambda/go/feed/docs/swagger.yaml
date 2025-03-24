@@ -1,4 +1,4 @@
-basePath: /{stage}
+basePath: /{stage}/feed
 definitions:
   main.APIResponse:
     properties:
@@ -101,7 +101,7 @@ info:
   title: NounHub Feed API
   version: "1.0"
 paths:
-  /feed/attachments/{id}:
+  /attachments/{id}:
     delete:
       consumes:
       - application/json
@@ -140,7 +140,7 @@ paths:
       summary: Delete attachment
       tags:
       - Attachments
-  /feed/categories:
+  /categories:
     get:
       consumes:
       - application/json
@@ -210,7 +210,7 @@ paths:
       summary: Create a new category
       tags:
       - Categories
-  /feed/categories/{id}:
+  /categories/{id}:
     delete:
       consumes:
       - application/json
@@ -302,7 +302,7 @@ paths:
       summary: Update a category
       tags:
       - Categories
-  /feed/posts:
+  /posts:
     get:
       consumes:
       - application/json
@@ -377,7 +377,7 @@ paths:
       summary: Create a new post
       tags:
       - Posts
-  /feed/posts/{id}:
+  /posts/{id}:
     delete:
       consumes:
       - application/json
@@ -502,7 +502,7 @@ paths:
       summary: Update a post
       tags:
       - Posts
-  /feed/posts/{id}/attachments:
+  /posts/{id}/attachments:
     get:
       consumes:
       - application/json
@@ -591,7 +591,7 @@ paths:
       summary: Add attachment to post
       tags:
       - Attachments
-  /feed/posts/{id}/like:
+  /posts/{id}/like:
     delete:
       consumes:
       - application/json
@@ -672,7 +672,7 @@ paths:
       summary: Like a post
       tags:
       - Likes
-  /feed/posts/{id}/repost:
+  /posts/{id}/repost:
     post:
       consumes:
       - application/json

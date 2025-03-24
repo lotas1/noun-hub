@@ -18,7 +18,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/feed/attachments/{id}": {
+        "/attachments/{id}": {
             "delete": {
                 "security": [
                     {
@@ -79,7 +79,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/categories": {
+        "/categories": {
             "get": {
                 "description": "Retrieve a list of all categories",
                 "consumes": [
@@ -196,7 +196,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/categories/{id}": {
+        "/categories/{id}": {
             "put": {
                 "security": [
                     {
@@ -343,7 +343,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/posts": {
+        "/posts": {
             "get": {
                 "description": "Retrieve a list of posts, optionally filtered by category or author",
                 "consumes": [
@@ -468,7 +468,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/posts/{id}": {
+        "/posts/{id}": {
             "get": {
                 "description": "Retrieve a specific post by its ID",
                 "consumes": [
@@ -669,7 +669,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/posts/{id}/attachments": {
+        "/posts/{id}/attachments": {
             "get": {
                 "description": "Get all attachments for a post",
                 "consumes": [
@@ -814,7 +814,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/posts/{id}/like": {
+        "/posts/{id}/like": {
             "post": {
                 "security": [
                     {
@@ -940,7 +940,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/feed/posts/{id}/repost": {
+        "/posts/{id}/repost": {
             "post": {
                 "security": [
                     {
@@ -1169,7 +1169,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "",
-	BasePath:         "/{stage}",
+	BasePath:         "/{stage}/feed",
 	Schemes:          []string{},
 	Title:            "NounHub Feed API",
 	Description:      "Feed service for NounHub providing school news and announcements",

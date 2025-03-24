@@ -4,7 +4,7 @@
 // @description Feed service for NounHub providing school news and announcements
 // @contact.name NounHub API Support
 // @contact.url https://www.nounhub.org
-// @BasePath /{stage}
+// @BasePath /{stage}/feed
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
@@ -175,16 +175,10 @@ func main() {
 func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract route details
 	method := request.RequestContext.HTTP.Method
-	path := request.RequestContext.HTTP.Path
+	path := normalizePath(request.RequestContext.HTTP.Path)
 
-	// Extract the non-stage part of the path (remove /{stage} prefix)
-	parts := strings.Split(path, "/")
-	if len(parts) > 2 {
-		path = "/" + strings.Join(parts[2:], "/")
-	}
-
-	// Handle Swagger documentation requests - now with /feed prefix
-	if strings.Contains(path, "/feed/swagger/") {
+	// Handle Swagger documentation requests
+	if strings.Contains(path, "/swagger/") {
 		return h.handleSwaggerRequest(ctx, request)
 	}
 
@@ -204,48 +198,74 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 	// Route to appropriate handler
 	switch {
 	// Post endpoints
-	case method == "GET" && path == "/feed/posts":
+	case method == "GET" && path == "/posts":
 		return h.handleGetPosts(ctx, request, claims)
-	case method == "GET" && strings.HasPrefix(path, "/feed/posts/"):
+	case method == "GET" && strings.HasPrefix(path, "/posts/"):
 		return h.handleGetPost(ctx, request, claims)
-	case method == "POST" && path == "/feed/posts":
+	case method == "POST" && path == "/posts":
 		return h.handleCreatePost(ctx, request, claims)
-	case method == "PUT" && strings.HasPrefix(path, "/feed/posts/"):
+	case method == "PUT" && strings.HasPrefix(path, "/posts/"):
 		return h.handleUpdatePost(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/feed/posts/"):
+	case method == "DELETE" && strings.HasPrefix(path, "/posts/"):
 		return h.handleDeletePost(ctx, request, claims)
 
 	// Category endpoints
-	case method == "GET" && path == "/feed/categories":
+	case method == "GET" && path == "/categories":
 		return h.handleGetCategories(ctx, request, claims)
-	case method == "POST" && path == "/feed/categories":
+	case method == "POST" && path == "/categories":
 		return h.handleCreateCategory(ctx, request, claims)
-	case method == "PUT" && strings.HasPrefix(path, "/feed/categories/"):
+	case method == "PUT" && strings.HasPrefix(path, "/categories/"):
 		return h.handleUpdateCategory(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/feed/categories/"):
+	case method == "DELETE" && strings.HasPrefix(path, "/categories/"):
 		return h.handleDeleteCategory(ctx, request, claims)
 
 	// Like endpoints
-	case method == "POST" && strings.HasPrefix(path, "/feed/posts/") && strings.HasSuffix(path, "/like"):
+	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/like"):
 		return h.handleLikePost(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/feed/posts/") && strings.HasSuffix(path, "/like"):
+	case method == "DELETE" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/like"):
 		return h.handleUnlikePost(ctx, request, claims)
 
 	// Attachment endpoints
-	case method == "POST" && strings.HasPrefix(path, "/feed/posts/") && strings.HasSuffix(path, "/attachments"):
+	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/attachments"):
 		return h.handleAddAttachment(ctx, request, claims)
-	case method == "GET" && strings.HasPrefix(path, "/feed/posts/") && strings.HasSuffix(path, "/attachments"):
+	case method == "GET" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/attachments"):
 		return h.handleGetAttachments(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/feed/attachments/"):
+	case method == "DELETE" && strings.HasPrefix(path, "/attachments/"):
 		return h.handleDeleteAttachment(ctx, request, claims)
 
 	// Repost endpoints
-	case method == "POST" && strings.HasPrefix(path, "/feed/posts/") && strings.HasSuffix(path, "/repost"):
+	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/repost"):
 		return h.handleRepostPost(ctx, request, claims)
 
 	default:
 		return sendAPIResponse(404, false, "", nil, "Endpoint not found"), nil
 	}
+}
+
+// Helper function to normalize API paths
+func normalizePath(path string) string {
+	// Split the path into parts
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 {
+		return path
+	}
+
+	// Remove stage and service prefix (e.g., /dev/feed)
+	// Find the index of "feed" in the path
+	feedIndex := -1
+	for i, part := range parts {
+		if part == "feed" {
+			feedIndex = i
+			break
+		}
+	}
+
+	if feedIndex >= 0 && feedIndex+1 < len(parts) {
+		// Return everything after the first occurrence of "feed"
+		return "/" + strings.Join(parts[feedIndex+1:], "/")
+	}
+
+	return path
 }
 
 // Utility function to send API responses
@@ -324,7 +344,7 @@ func isModerator(claims *Claims) bool {
 // Check if the endpoint doesn't require authentication
 func isPublicEndpoint(method, path string) bool {
 	// Only GET requests to feed posts and categories are public
-	return method == "GET" && (strings.HasPrefix(path, "/feed/posts") || strings.HasPrefix(path, "/feed/categories"))
+	return method == "GET" && (strings.HasPrefix(path, "/posts") || strings.HasPrefix(path, "/categories"))
 }
 
 // @Summary Get all posts
@@ -336,7 +356,7 @@ func isPublicEndpoint(method, path string) bool {
 // @Param author_id query string false "Filter by author ID"
 // @Success 200 {object} APIResponse{data=[]Post} "Successful operation"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts [get]
+// @Router /posts [get]
 func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Get query parameters
 	categoryID := request.QueryStringParameters["category"]
@@ -435,7 +455,7 @@ func sortPostsByDate(posts []Post) {
 // @Success 200 {object} APIResponse{data=Post} "Successful operation"
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id} [get]
+// @Router /posts/{id} [get]
 func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract post ID from path
 	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
@@ -484,7 +504,7 @@ func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatew
 // @Failure 400 {object} APIResponse "Invalid input"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts [post]
+// @Router /posts [post]
 func (h *FeedHandler) handleCreatePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can create posts
 	if !isModerator(claims) {
@@ -579,7 +599,7 @@ func (h *FeedHandler) categoryExists(ctx context.Context, categoryID string) (bo
 // @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id} [put]
+// @Router /posts/{id} [put]
 func (h *FeedHandler) handleUpdatePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can update posts
 	if !isModerator(claims) {
@@ -716,7 +736,7 @@ func (h *FeedHandler) getUserGroups(ctx context.Context, username string) ([]str
 // @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id} [delete]
+// @Router /posts/{id} [delete]
 func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete posts
 	if !isModerator(claims) {
@@ -855,7 +875,7 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 // @Produce json
 // @Success 200 {object} APIResponse{data=[]Category} "Successful operation"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/categories [get]
+// @Router /categories [get]
 func (h *FeedHandler) handleGetCategories(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Scan all categories
 	scanOutput, err := h.dynamodbClient.Scan(ctx, &dynamodb.ScanInput{
@@ -889,7 +909,7 @@ func (h *FeedHandler) handleGetCategories(ctx context.Context, request events.AP
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden - not admin"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/categories [post]
+// @Router /categories [post]
 func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can create categories
 	if !isModerator(claims) {
@@ -970,7 +990,7 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 // @Failure 403 {object} APIResponse "Forbidden - not admin"
 // @Failure 404 {object} APIResponse "Category not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/categories/{id} [put]
+// @Router /categories/{id} [put]
 func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can update categories
 	if !isModerator(claims) {
@@ -1083,7 +1103,7 @@ func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.A
 // @Failure 403 {object} APIResponse "Forbidden - not admin"
 // @Failure 404 {object} APIResponse "Category not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/categories/{id} [delete]
+// @Router /categories/{id} [delete]
 func (h *FeedHandler) handleDeleteCategory(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete categories
 	if !isModerator(claims) {
@@ -1164,7 +1184,7 @@ func (h *FeedHandler) handleDeleteCategory(ctx context.Context, request events.A
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 409 {object} APIResponse "Post already liked"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id}/like [post]
+// @Router /posts/{id}/like [post]
 func (h *FeedHandler) handleLikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// All authenticated users can like posts
 	if claims == nil {
@@ -1280,7 +1300,7 @@ func (h *FeedHandler) handleLikePost(ctx context.Context, request events.APIGate
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 404 {object} APIResponse "Post not found or not liked"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id}/like [delete]
+// @Router /posts/{id}/like [delete]
 func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// All authenticated users can unlike posts they've liked
 	if claims == nil {
@@ -1388,7 +1408,7 @@ func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGa
 // @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id}/attachments [post]
+// @Router /posts/{id}/attachments [post]
 func (h *FeedHandler) handleAddAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can add attachments
 	if !isModerator(claims) {
@@ -1408,7 +1428,7 @@ func (h *FeedHandler) handleAddAttachment(ctx context.Context, request events.AP
 // @Success 200 {object} APIResponse{data=[]Attachment} "List of attachments"
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id}/attachments [get]
+// @Router /posts/{id}/attachments [get]
 func (h *FeedHandler) handleGetAttachments(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// TODO: Implement get attachments logic
 	return sendAPIResponse(200, true, "Attachments retrieved successfully", []Attachment{}, ""), nil
@@ -1426,7 +1446,7 @@ func (h *FeedHandler) handleGetAttachments(ctx context.Context, request events.A
 // @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
 // @Failure 404 {object} APIResponse "Attachment not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/attachments/{id} [delete]
+// @Router /attachments/{id} [delete]
 func (h *FeedHandler) handleDeleteAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can delete attachments
 	if !isModerator(claims) {
@@ -1449,7 +1469,7 @@ func (h *FeedHandler) handleDeleteAttachment(ctx context.Context, request events
 // @Failure 403 {object} APIResponse "Forbidden - not admin or moderator"
 // @Failure 404 {object} APIResponse "Original post not found"
 // @Failure 500 {object} APIResponse "Server error"
-// @Router /feed/posts/{id}/repost [post]
+// @Router /posts/{id}/repost [post]
 func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Only moderators and admins can repost
 	if !isModerator(claims) {

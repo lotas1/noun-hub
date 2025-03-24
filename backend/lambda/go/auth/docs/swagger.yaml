@@ -1,4 +1,4 @@
-basePath: /{stage}
+basePath: /{stage}/auth
 definitions:
   main.APIResponse:
     properties:
@@ -124,7 +124,7 @@ info:
   title: NounHub Authentication API
   version: "1.0"
 paths:
-  /auth/confirm:
+  /confirm:
     post:
       consumes:
       - application/json
@@ -159,7 +159,7 @@ paths:
       summary: Confirm user registration
       tags:
       - Authentication
-  /auth/confirm-forgot-password:
+  /confirm-forgot-password:
     post:
       consumes:
       - application/json
@@ -193,7 +193,7 @@ paths:
       summary: Complete password reset
       tags:
       - Authentication
-  /auth/forgot-password:
+  /forgot-password:
     post:
       consumes:
       - application/json
@@ -227,7 +227,7 @@ paths:
       summary: Initiate password reset
       tags:
       - Authentication
-  /auth/google:
+  /google:
     post:
       consumes:
       - application/json
@@ -263,7 +263,7 @@ paths:
       summary: Sign in with Google
       tags:
       - Authentication
-  /auth/groups:
+  /groups:
     get:
       consumes:
       - application/json
@@ -295,7 +295,7 @@ paths:
       summary: List all groups
       tags:
       - Groups
-  /auth/groups/{groupName}/users:
+  /groups/{groupName}/users:
     get:
       consumes:
       - application/json
@@ -341,7 +341,7 @@ paths:
       summary: List users in a group
       tags:
       - Groups
-  /auth/groups/{groupName}/users/{email}:
+  /groups/{groupName}/users/{email}:
     delete:
       consumes:
       - application/json
@@ -436,7 +436,7 @@ paths:
       summary: Add user to group
       tags:
       - Groups
-  /auth/profile:
+  /profile:
     get:
       consumes:
       - application/json
@@ -466,7 +466,7 @@ paths:
       summary: Get user profile
       tags:
       - Authentication
-  /auth/refresh:
+  /refresh:
     post:
       consumes:
       - application/json
@@ -506,7 +506,7 @@ paths:
       summary: Refresh authentication tokens
       tags:
       - Authentication
-  /auth/resend-confirmation:
+  /resend-confirmation:
     post:
       consumes:
       - application/json
@@ -540,7 +540,7 @@ paths:
       summary: Resend confirmation code
       tags:
       - Authentication
-  /auth/signin:
+  /signin:
     post:
       consumes:
       - application/json
@@ -580,7 +580,7 @@ paths:
       summary: Sign in a user
       tags:
       - Authentication
-  /auth/signout:
+  /signout:
     post:
       consumes:
       - application/json
@@ -616,7 +616,7 @@ paths:
       summary: Sign out user
       tags:
       - Authentication
-  /auth/signup:
+  /signup:
     post:
       consumes:
       - application/json
@@ -652,7 +652,7 @@ paths:
       summary: Register a new user
       tags:
       - Authentication
-  /auth/users/{email}/groups:
+  /users/{email}/groups:
     get:
       consumes:
       - application/json

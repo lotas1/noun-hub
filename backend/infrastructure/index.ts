@@ -7,6 +7,8 @@ import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 // Import the API documentation module
 import * as apiDocs from "./api-docs";
+import { createAuthResources } from "./modules/auth";
+import { createDatabaseResources } from "./modules/database";
 
 const config = new pulumi.Config();
 const stack = pulumi.getStack();
@@ -29,300 +31,107 @@ const usEast1Provider = new aws.Provider("us-east-1-provider", {
 });
 
 //------------------------------------------------------------
-// 2) Cognito User Pool Setup
+// 2) Import and Create Modularized Resources
 //------------------------------------------------------------
 
-// Create Cognito User Pool
-const userPool = new aws.cognito.UserPool("auth-userpool", {
-    name: `nounhub-auth-userpool-${stack}`,
-    
-    // Custom attributes
-    schemas: [
+// Auth resources
+const auth = createAuthResources(stack, commonTags);
+
+// Database resources
+const database = createDatabaseResources(stack, commonTags);
+
+//------------------------------------------------------------
+// 3) Export Required Values
+//------------------------------------------------------------
+
+// Auth exports
+export const userPoolId = auth.userPoolId;
+export const userPoolClientId = auth.userPoolClientId;
+export const adminGroupName = auth.adminGroupName;
+export const moderatorGroupName = auth.moderatorGroupName;
+
+// Database exports
+export const userTableName = database.userTableName;
+export const postTableName = database.postTableName;
+export const categoryTableName = database.categoryTableName;
+export const attachmentTableName = database.attachmentTableName;
+export const likeTableName = database.likeTableName;
+export const feedBucketName = database.feedBucketName;
+
+// Lambda function environment variables
+const authLambdaEnvironment = {
+    USER_POOL_ID: auth.userPoolId,
+    CLIENT_ID: auth.userPoolClientId,
+    GOOGLE_CLIENT_ID: config.require("googleClientId"),
+    USER_TABLE_NAME: database.userTableName,
+    ADMIN_GROUP: "admin",
+    MODERATOR_GROUP: "moderator",
+    INITIAL_ADMIN_EMAIL: "offorsomto50@gmail.com"
+};
+
+// Lambda function IAM policy for Cognito
+const cognitoPolicy = {
+    Version: "2012-10-17",
+    Statement: [
         {
-            name: "auth_method",
-            attributeDataType: "String",
-            required: false,
-            mutable: true,
-            stringAttributeConstraints: {
-                minLength: "1",
-                maxLength: "10"
-            }
-        },
-        {
-            name: "linked_providers",
-            attributeDataType: "String",
-            required: false,
-            mutable: true,
-            stringAttributeConstraints: {
-                minLength: "0",
-                maxLength: "50"
-            }
+            Effect: "Allow",
+            Action: [
+                "cognito-idp:AdminGetUser",
+                "cognito-idp:ListUsersInGroup"
+            ],
+            Resource: auth.userPoolArn
         }
-    ],
-
-    // Password policy
-    passwordPolicy: {
-        minimumLength: 6,
-    },
-
-    // Email configuration
-    emailConfiguration: {
-        emailSendingAccount: "COGNITO_DEFAULT"
-    },
-
-    // Account recovery settings
-    accountRecoverySetting: {
-        recoveryMechanisms: [{
-            name: "verified_email",
-            priority: 1
-        }]
-    },
-
-    // Auto verification
-    autoVerifiedAttributes: ["email"],
-
-    // User pool policies
-    adminCreateUserConfig: {
-        allowAdminCreateUserOnly: false
-    },
-
-    tags: commonTags
-});
-
-// Create User Pool Client
-const userPoolClient = new aws.cognito.UserPoolClient("auth-userpool-client", {
-    name: `nounhub-auth-userpool-client-${stack}`,
-    userPoolId: userPool.id,
-    
-    // Token validity
-    accessTokenValidity: 24, // 24 hours
-    idTokenValidity: 24, // 24 hours
-    refreshTokenValidity: 365, // 365 days
-    tokenValidityUnits: {
-        accessToken: "hours",
-        idToken: "hours",
-        refreshToken: "days"
-    },
-
-    // Device tracking
-    preventUserExistenceErrors: "ENABLED",
-    
-    // OAuth settings
-    allowedOauthFlows: ["code"],
-    allowedOauthFlowsUserPoolClient: true,
-    allowedOauthScopes: ["email", "openid", "profile"],
-    supportedIdentityProviders: ["COGNITO"],
-
-    // Prevent client secret generation
-    generateSecret: false,
-
-    // Callback URLs
-    // Update Callback URLs to use the frontend domain
-    callbackUrls: [`https://nounhub.org/${stack}/auth/callback`],
-    logoutUrls: [`https://nounhub.org/${stack}/auth/logout`],
-
-    // Token revocation
-    enableTokenRevocation: true,
-
-    // Rate limits
-    explicitAuthFlows: [
-        "ALLOW_USER_SRP_AUTH",
-        "ALLOW_REFRESH_TOKEN_AUTH",
-        "ALLOW_USER_PASSWORD_AUTH",
-        "ALLOW_CUSTOM_AUTH"  // Add this line
     ]
-});
+};
 
-// Export the User Pool ID and Client ID
-export const userPoolId = userPool.id;
-export const userPoolClientId = userPoolClient.id;
-
-// Create Cognito User Groups
-const adminGroup = new aws.cognito.UserGroup("admin-group", {
-    userPoolId: userPool.id,
-    name: "admin",
-    description: "System administrators group",
-    precedence: 1
-});
-
-const moderatorGroup = new aws.cognito.UserGroup("moderator-group", {
-    userPoolId: userPool.id,
-    name: "moderator",
-    description: "Content moderators group",
-    precedence: 50
-});
-
-// Export group names for Lambda function
-export const adminGroupName = adminGroup.name;
-export const moderatorGroupName = moderatorGroup.name;
-
-//------------------------------------------------------------
-// 3) DynamoDB User Table
-//------------------------------------------------------------
-
-// Create DynamoDB User Table
-const userTable = new aws.dynamodb.Table("user-table", {
-    name: `nounhub-user-table-${stack}`,
-    attributes: [
-        { name: "user_id", type: "S" },
-        { name: "email", type: "S" },
-    ],
-    hashKey: "user_id",
-    globalSecondaryIndexes: [
+// Lambda function IAM policy for DynamoDB
+const dynamoPolicy = {
+    Version: "2012-10-17",
+    Statement: [
         {
-            name: "EmailIndex",
-            hashKey: "email",
-            projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
+            Effect: "Allow",
+            Action: [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:Scan"
+            ],
+            Resource: [
+                database.userTableArn,
+                pulumi.interpolate`${database.userTableArn}/index/*`,
+                database.postTableArn,
+                pulumi.interpolate`${database.postTableArn}/index/*`,
+                database.categoryTableArn,
+                pulumi.interpolate`${database.categoryTableArn}/index/*`,
+                database.attachmentTableArn,
+                pulumi.interpolate`${database.attachmentTableArn}/index/*`,
+                database.likeTableArn,
+                pulumi.interpolate`${database.likeTableArn}/index/*`
+            ]
         }
-    ],
-    billingMode: "PROVISIONED",
-    readCapacity: 5,
-    writeCapacity: 5,
-    tags: commonTags,
-});
+    ]
+};
 
-// Export the DynamoDB table name
-export const userTableName = userTable.name;
-
-//------------------------------------------------------------
-// 3.1) DynamoDB Feed Tables
-//------------------------------------------------------------
-
-// Create DynamoDB Post Table
-const postTable = new aws.dynamodb.Table("post-table", {
-    name: `nounhub-post-table-${stack}`,
-    attributes: [
-        { name: "id", type: "S" },
-        { name: "author_id", type: "S" },
-        { name: "category_id", type: "S" },
-        { name: "created_at", type: "S" },
-    ],
-    hashKey: "id",
-    globalSecondaryIndexes: [
+// Lambda function IAM policy for S3
+const s3Policy = {
+    Version: "2012-10-17",
+    Statement: [
         {
-            name: "AuthorIndex",
-            hashKey: "author_id",
-            rangeKey: "created_at",
-            projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
-        },
-        {
-            name: "CategoryIndex",
-            hashKey: "category_id",
-            rangeKey: "created_at",
-            projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
-        },
-        {
-            name: "TimeIndex",
-            hashKey: "id", // Not used, just a placeholder
-            rangeKey: "created_at",
-            projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
+            Effect: "Allow",
+            Action: [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:DeleteObject"
+            ],
+            Resource: [
+                database.feedBucketArn,
+                pulumi.interpolate`${database.feedBucketArn}/*`
+            ]
         }
-    ],
-    billingMode: "PROVISIONED",
-    readCapacity: 5,
-    writeCapacity: 5,
-    tags: commonTags,
-});
-
-// Create DynamoDB Category Table
-const categoryTable = new aws.dynamodb.Table("category-table", {
-    name: `nounhub-category-table-${stack}`,
-    attributes: [
-        { name: "id", type: "S" },
-        { name: "name", type: "S" },
-    ],
-    hashKey: "id",
-    globalSecondaryIndexes: [
-        {
-            name: "NameIndex",
-            hashKey: "name",
-            projectionType: "ALL",
-            readCapacity: 2,
-            writeCapacity: 2,
-        }
-    ],
-    billingMode: "PROVISIONED",
-    readCapacity: 2,
-    writeCapacity: 2,
-    tags: commonTags,
-});
-
-// Create DynamoDB Attachment Table
-const attachmentTable = new aws.dynamodb.Table("attachment-table", {
-    name: `nounhub-attachment-table-${stack}`,
-    attributes: [
-        { name: "id", type: "S" },
-        { name: "post_id", type: "S" },
-    ],
-    hashKey: "id",
-    globalSecondaryIndexes: [
-        {
-            name: "PostIndex",
-            hashKey: "post_id",
-            projectionType: "ALL",
-            readCapacity: 2,
-            writeCapacity: 2,
-        }
-    ],
-    billingMode: "PROVISIONED",
-    readCapacity: 2,
-    writeCapacity: 2,
-    tags: commonTags,
-});
-
-// Create DynamoDB Like Table
-const likeTable = new aws.dynamodb.Table("like-table", {
-    name: `nounhub-like-table-${stack}`,
-    attributes: [
-        { name: "user_id", type: "S" },
-        { name: "post_id", type: "S" },
-    ],
-    hashKey: "user_id",
-    rangeKey: "post_id",
-    globalSecondaryIndexes: [
-        {
-            name: "PostLikesIndex",
-            hashKey: "post_id",
-            projectionType: "ALL",
-            readCapacity: 2,
-            writeCapacity: 2,
-        }
-    ],
-    billingMode: "PROVISIONED",
-    readCapacity: 2,
-    writeCapacity: 2,
-    tags: commonTags,
-});
-
-// Create S3 bucket for feed attachments
-const feedBucket = new aws.s3.Bucket("feed-bucket", {
-    bucket: `nounhub-feed-attachments-${stack}`,
-    acl: "private",
-    corsRules: [
-        {
-            allowedHeaders: ["*"],
-            allowedMethods: ["GET", "PUT", "POST", "DELETE"],
-            allowedOrigins: ["*"],
-            maxAgeSeconds: 3000,
-        },
-    ],
-    tags: commonTags,
-});
-
-// Export Feed table names
-export const postTableName = postTable.name;
-export const categoryTableName = categoryTable.name;
-export const attachmentTableName = attachmentTable.name;
-export const likeTableName = likeTable.name;
-export const feedBucketName = feedBucket.bucket;
+    ]
+};
 
 //------------------------------------------------------------
 // 4) Lambda Function Setup
@@ -370,18 +179,22 @@ const authFunction = new aws.lambda.Function("auth-function", {
     }),
     // Environment variables for Lambda function
     environment: {
-        variables: {
-            USER_POOL_ID: userPool.id,
-            CLIENT_ID: userPoolClient.id,
-            GOOGLE_CLIENT_ID: config.require("googleClientId"),
-            USER_TABLE_NAME: userTable.name,
-            ADMIN_GROUP: "admin",
-            MODERATOR_GROUP: "moderator",
-            INITIAL_ADMIN_EMAIL: "offorsomto50@gmail.com"
-        }
+        variables: authLambdaEnvironment
     },
     tags: commonTags
 });
+
+// Environment variables for feed Lambda function
+const feedLambdaEnvironment = {
+    USER_POOL_ID: auth.userPoolId,
+    POST_TABLE_NAME: database.postTableName,
+    CATEGORY_TABLE_NAME: database.categoryTableName,
+    ATTACHMENT_TABLE_NAME: database.attachmentTableName,
+    LIKE_TABLE_NAME: database.likeTableName,
+    BUCKET_NAME: database.feedBucketName,
+    ADMIN_GROUP: "admin",
+    MODERATOR_GROUP: "moderator"
+};
 
 // Create Lambda function for feed
 const feedFunction = new aws.lambda.Function("feed-function", {
@@ -425,16 +238,7 @@ const feedFunction = new aws.lambda.Function("feed-function", {
     }),
     // Environment variables for Lambda function
     environment: {
-        variables: {
-            USER_POOL_ID: userPool.id,
-            POST_TABLE_NAME: postTable.name,
-            CATEGORY_TABLE_NAME: categoryTable.name,
-            ATTACHMENT_TABLE_NAME: attachmentTable.name,
-            LIKE_TABLE_NAME: likeTable.name,
-            BUCKET_NAME: feedBucket.bucket,
-            ADMIN_GROUP: "admin",
-            MODERATOR_GROUP: "moderator"
-        }
+        variables: feedLambdaEnvironment
     },
     tags: commonTags
 });
@@ -640,7 +444,7 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:ListGroups",
                     "cognito-idp:ListUsersInGroup"
                 ],
-                Resource: userPool.arn
+                Resource: auth.userPoolArn
             },
             {
                 Effect: "Allow",
@@ -653,8 +457,8 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "dynamodb:Scan"
                 ],
                 Resource: [
-                    userTable.arn,
-                    pulumi.interpolate`${userTable.arn}/index/*`
+                    database.userTableArn,
+                    pulumi.interpolate`${database.userTableArn}/index/*`
                 ]
             },
             {
@@ -685,7 +489,7 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     "cognito-idp:ListUsers",
                     "cognito-idp:ListUsersInGroup"
                 ],
-                Resource: userPool.arn
+                Resource: auth.userPoolArn
             },
             {
                 Effect: "Allow",
@@ -700,14 +504,14 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     "dynamodb:BatchWriteItem"
                 ],
                 Resource: [
-                    postTable.arn,
-                    pulumi.interpolate`${postTable.arn}/index/*`,
-                    categoryTable.arn,
-                    pulumi.interpolate`${categoryTable.arn}/index/*`,
-                    attachmentTable.arn,
-                    pulumi.interpolate`${attachmentTable.arn}/index/*`,
-                    likeTable.arn,
-                    pulumi.interpolate`${likeTable.arn}/index/*`
+                    database.postTableArn,
+                    pulumi.interpolate`${database.postTableArn}/index/*`,
+                    database.categoryTableArn,
+                    pulumi.interpolate`${database.categoryTableArn}/index/*`,
+                    database.attachmentTableArn,
+                    pulumi.interpolate`${database.attachmentTableArn}/index/*`,
+                    database.likeTableArn,
+                    pulumi.interpolate`${database.likeTableArn}/index/*`
                 ]
             },
             {
@@ -719,8 +523,8 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     "s3:ListBucket"
                 ],
                 Resource: [
-                    feedBucket.arn,
-                    pulumi.interpolate`${feedBucket.arn}/*`
+                    database.feedBucketArn,
+                    pulumi.interpolate`${database.feedBucketArn}/*`
                 ]
             },
             {

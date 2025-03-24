@@ -18,7 +18,7 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/auth/confirm": {
+        "/confirm": {
             "post": {
                 "description": "Verifies a user account with the confirmation code sent to their email",
                 "consumes": [
@@ -70,7 +70,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/confirm-forgot-password": {
+        "/confirm-forgot-password": {
             "post": {
                 "description": "Resets the user's password using the verification code",
                 "consumes": [
@@ -122,7 +122,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/forgot-password": {
+        "/forgot-password": {
             "post": {
                 "description": "Sends a password reset code to the user's email",
                 "consumes": [
@@ -174,7 +174,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/google": {
+        "/google": {
             "post": {
                 "description": "Authenticates a user with a Google OAuth token",
                 "consumes": [
@@ -233,7 +233,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/groups": {
+        "/groups": {
             "get": {
                 "security": [
                     {
@@ -288,7 +288,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/groups/{groupName}/users": {
+        "/groups/{groupName}/users": {
             "get": {
                 "security": [
                     {
@@ -364,7 +364,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/groups/{groupName}/users/{email}": {
+        "/groups/{groupName}/users/{email}": {
             "post": {
                 "security": [
                     {
@@ -510,7 +510,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/profile": {
+        "/profile": {
             "get": {
                 "security": [
                     {
@@ -562,7 +562,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/refresh": {
+        "/refresh": {
             "post": {
                 "description": "Issues new access and ID tokens using a refresh token",
                 "consumes": [
@@ -627,7 +627,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/resend-confirmation": {
+        "/resend-confirmation": {
             "post": {
                 "description": "Sends a new confirmation code to the user's email",
                 "consumes": [
@@ -679,7 +679,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/signin": {
+        "/signin": {
             "post": {
                 "description": "Authenticates a user and returns JWT tokens",
                 "consumes": [
@@ -744,7 +744,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/signout": {
+        "/signout": {
             "post": {
                 "security": [
                     {
@@ -801,7 +801,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/signup": {
+        "/signup": {
             "post": {
                 "description": "Creates a new user account with email and password",
                 "consumes": [
@@ -860,7 +860,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/users/{email}/groups": {
+        "/users/{email}/groups": {
             "get": {
                 "security": [
                     {
@@ -1112,7 +1112,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "",
-	BasePath:         "/{stage}",
+	BasePath:         "/{stage}/auth",
 	Schemes:          []string{},
 	Title:            "NounHub Authentication API",
 	Description:      "Response containing user's group information",

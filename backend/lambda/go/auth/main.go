@@ -4,7 +4,7 @@
 // @description Authentication service for NounHub providing user management and authentication endpoints
 // @contact.name NounHub API Support
 // @contact.url https://www.nounhub.org
-// @BasePath /{stage}
+// @BasePath /{stage}/auth
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
@@ -49,7 +49,7 @@ type GoogleOAuthHandler struct {
 // @Success 200 {object} APIResponse{data=map[string]interface{}} "Successfully authenticated with Google"
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/google [post]
+// @Router /google [post]
 func (h *GoogleOAuthHandler) HandleGoogleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var requestBody struct {
 		Token string `json:"token"`
@@ -217,10 +217,14 @@ func NewAuthHandler() (*AuthHandler, error) {
 
 // Helper function to normalize API paths
 func normalizePath(path string) string {
-	if parts := strings.Split(path, "/"); len(parts) > 2 {
-		return "/" + strings.Join(parts[2:], "/")
+	// Split the path into parts
+	parts := strings.Split(path, "/")
+	if len(parts) < 3 {
+		return path
 	}
-	return path
+
+	// Remove stage and service prefix (e.g., /dev/auth)
+	return "/" + strings.Join(parts[3:], "/")
 }
 
 func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -229,36 +233,36 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 	// Single debug log for request tracking
 	log.Printf("Processing request: %s %s", request.RequestContext.HTTP.Method, path)
 
-	// Handle Swagger documentation requests - now with /auth prefix
-	if strings.Contains(path, "/auth/swagger/") {
+	// Handle Swagger documentation requests
+	if strings.Contains(path, "/swagger/") {
 		return h.handleSwaggerRequest(ctx, request)
 	}
 
 	// Handle regular API endpoints
 	switch {
-	case path == "/auth/signup":
+	case path == "/signup":
 		return h.handleSignUp(ctx, request)
-	case path == "/auth/signin":
+	case path == "/signin":
 		return h.handleSignIn(ctx, request)
-	case path == "/auth/confirm":
+	case path == "/confirm":
 		return h.handleConfirmSignUp(ctx, request)
-	case path == "/auth/google":
+	case path == "/google":
 		return h.googleOAuthHandler.HandleGoogleSignIn(ctx, request)
-	case path == "/auth/profile":
+	case path == "/profile":
 		return h.handleGetProfile(ctx, request)
-	case path == "/auth/refresh":
+	case path == "/refresh":
 		return h.handleTokenRefresh(ctx, request)
-	case path == "/auth/resend-confirmation":
+	case path == "/resend-confirmation":
 		return h.handleResendConfirmationCode(ctx, request)
-	case path == "/auth/forgot-password":
+	case path == "/forgot-password":
 		return h.handleForgotPassword(ctx, request)
-	case path == "/auth/confirm-forgot-password":
+	case path == "/confirm-forgot-password":
 		return h.handleConfirmForgotPassword(ctx, request)
-	case path == "/auth/signout":
+	case path == "/signout":
 		return h.handleSignOut(ctx, request)
-	case path == "/auth/groups":
+	case path == "/groups":
 		return h.handleListGroups(ctx, request)
-	case strings.HasPrefix(path, "/auth/groups/") && strings.Contains(path, "/users"):
+	case strings.HasPrefix(path, "/groups/") && strings.Contains(path, "/users"):
 		if request.RequestContext.HTTP.Method == "GET" {
 			return h.handleListUsersInGroup(ctx, request)
 		} else if request.RequestContext.HTTP.Method == "POST" {
@@ -267,11 +271,10 @@ func (h *AuthHandler) HandleRequest(ctx context.Context, request events.APIGatew
 			return h.handleRemoveUserFromGroup(ctx, request)
 		}
 		return sendAPIResponse(405, false, "", nil, "Method not allowed"), nil
-	case strings.HasPrefix(path, "/auth/users/") && strings.HasSuffix(path, "/groups"):
+	case strings.HasPrefix(path, "/users/") && strings.HasSuffix(path, "/groups"):
 		return h.handleListUserGroups(ctx, request)
 	default:
-		return sendAPIResponse(404, false, "", nil,
-			fmt.Sprintf("The requested endpoint '%s' does not exist. Please check the documentation for available endpoints.", path)), nil
+		return sendAPIResponse(404, false, "", nil, "Not Found"), nil
 	}
 }
 
@@ -377,7 +380,7 @@ func sendAPIResponse(statusCode int, success bool, message string, data interfac
 // @Success 200 {object} APIResponse{data=map[string]interface{}} "Account created successfully"
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/signup [post]
+// @Router /signup [post]
 func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signUpReq SignUpRequest
 	if response := validateRequestBody(request.Body, &signUpReq); response != nil {
@@ -447,7 +450,7 @@ func (h *AuthHandler) handleSignUp(ctx context.Context, request events.APIGatewa
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Invalid credentials"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/signin [post]
+// @Router /signin [post]
 func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var signInReq SignInRequest
 	if response := validateRequestBody(request.Body, &signInReq); response != nil {
@@ -510,7 +513,7 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 // @Success 200 {object} APIResponse{data=UserProfileResponse} "Profile retrieved successfully"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/profile [get]
+// @Router /profile [get]
 func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
@@ -555,7 +558,7 @@ func (h *AuthHandler) handleGetProfile(ctx context.Context, request events.APIGa
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Invalid token"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/refresh [post]
+// @Router /refresh [post]
 func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var refreshReq RefreshTokenRequest
 	if response := validateRequestBody(request.Body, &refreshReq); response != nil {
@@ -610,7 +613,7 @@ func (h *AuthHandler) handleTokenRefresh(ctx context.Context, request events.API
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 404 {object} APIResponse "Account not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/confirm [post]
+// @Router /confirm [post]
 func (h *AuthHandler) handleConfirmSignUp(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmSignUpRequest
 	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
@@ -766,7 +769,7 @@ func main() {
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 404 {object} APIResponse "Account not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/forgot-password [post]
+// @Router /forgot-password [post]
 func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var forgotReq ForgotPasswordRequest
 	if response := validateRequestBody(request.Body, &forgotReq); response != nil {
@@ -821,7 +824,7 @@ func (h *AuthHandler) handleForgotPassword(ctx context.Context, request events.A
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 404 {object} APIResponse "Account not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/confirm-forgot-password [post]
+// @Router /confirm-forgot-password [post]
 func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var confirmReq ConfirmForgotPasswordRequest
 	if response := validateRequestBody(request.Body, &confirmReq); response != nil {
@@ -878,7 +881,7 @@ func (h *AuthHandler) handleConfirmForgotPassword(ctx context.Context, request e
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 404 {object} APIResponse "Account not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/resend-confirmation [post]
+// @Router /resend-confirmation [post]
 func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	var resendReq struct {
 		Email string `json:"email"`
@@ -937,7 +940,7 @@ func (h *AuthHandler) handleResendConfirmationCode(ctx context.Context, request 
 // @Failure 400 {object} APIResponse "Bad request"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/signout [post]
+// @Router /signout [post]
 func (h *AuthHandler) handleSignOut(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract access token
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1191,7 +1194,7 @@ const swaggerIndexHTML = `<!DOCTYPE html>
 // @Success 200 {object} APIResponse{data=[]GroupResponse} "Groups retrieved successfully"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups [get]
+// @Router /groups [get]
 func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1238,7 +1241,7 @@ func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGa
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups/{groupName}/users [get]
+// @Router /groups/{groupName}/users [get]
 func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1297,7 +1300,7 @@ func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 404 {object} APIResponse "User not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups/{groupName}/users/{email} [post]
+// @Router /groups/{groupName}/users/{email} [post]
 func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1392,7 +1395,7 @@ func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.A
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 404 {object} APIResponse "User not found"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/groups/{groupName}/users/{email} [delete]
+// @Router /groups/{groupName}/users/{email} [delete]
 func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
@@ -1470,7 +1473,7 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden"
 // @Failure 500 {object} APIResponse "Internal server error"
-// @Router /auth/users/{email}/groups [get]
+// @Router /users/{email}/groups [get]
 func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	// Check if user is authenticated and is an admin
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")

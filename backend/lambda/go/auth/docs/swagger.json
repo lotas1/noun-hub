@@ -9,9 +9,9 @@
         },
         "version": "1.0"
     },
-    "basePath": "/{stage}",
+    "basePath": "/{stage}/auth",
     "paths": {
-        "/auth/confirm": {
+        "/confirm": {
             "post": {
                 "description": "Verifies a user account with the confirmation code sent to their email",
                 "consumes": [
@@ -63,7 +63,7 @@
                 }
             }
         },
-        "/auth/confirm-forgot-password": {
+        "/confirm-forgot-password": {
             "post": {
                 "description": "Resets the user's password using the verification code",
                 "consumes": [
@@ -115,7 +115,7 @@
                 }
             }
         },
-        "/auth/forgot-password": {
+        "/forgot-password": {
             "post": {
                 "description": "Sends a password reset code to the user's email",
                 "consumes": [
@@ -167,7 +167,7 @@
                 }
             }
         },
-        "/auth/google": {
+        "/google": {
             "post": {
                 "description": "Authenticates a user with a Google OAuth token",
                 "consumes": [
@@ -226,7 +226,7 @@
                 }
             }
         },
-        "/auth/groups": {
+        "/groups": {
             "get": {
                 "security": [
                     {
@@ -281,7 +281,7 @@
                 }
             }
         },
-        "/auth/groups/{groupName}/users": {
+        "/groups/{groupName}/users": {
             "get": {
                 "security": [
                     {
@@ -357,7 +357,7 @@
                 }
             }
         },
-        "/auth/groups/{groupName}/users/{email}": {
+        "/groups/{groupName}/users/{email}": {
             "post": {
                 "security": [
                     {
@@ -503,7 +503,7 @@
                 }
             }
         },
-        "/auth/profile": {
+        "/profile": {
             "get": {
                 "security": [
                     {
@@ -555,7 +555,7 @@
                 }
             }
         },
-        "/auth/refresh": {
+        "/refresh": {
             "post": {
                 "description": "Issues new access and ID tokens using a refresh token",
                 "consumes": [
@@ -620,7 +620,7 @@
                 }
             }
         },
-        "/auth/resend-confirmation": {
+        "/resend-confirmation": {
             "post": {
                 "description": "Sends a new confirmation code to the user's email",
                 "consumes": [
@@ -672,7 +672,7 @@
                 }
             }
         },
-        "/auth/signin": {
+        "/signin": {
             "post": {
                 "description": "Authenticates a user and returns JWT tokens",
                 "consumes": [
@@ -737,7 +737,7 @@
                 }
             }
         },
-        "/auth/signout": {
+        "/signout": {
             "post": {
                 "security": [
                     {
@@ -794,7 +794,7 @@
                 }
             }
         },
-        "/auth/signup": {
+        "/signup": {
             "post": {
                 "description": "Creates a new user account with email and password",
                 "consumes": [
@@ -853,7 +853,7 @@
                 }
             }
         },
-        "/auth/users/{email}/groups": {
+        "/users/{email}/groups": {
             "get": {
                 "security": [
                     {
