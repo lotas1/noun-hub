@@ -77,12 +77,12 @@ export function createAuthResources(
         userPoolId: userPool.id,
         
         // Token validity
-        accessTokenValidity: 24, // 24 hours
-        idTokenValidity: 24, // 24 hours
+        accessTokenValidity: 5,          // 5 minutes
+        idTokenValidity: 5,              // 5 minutes
         refreshTokenValidity: 365, // 365 days
         tokenValidityUnits: {
-            accessToken: "hours",
-            idToken: "hours",
+            accessToken: "minutes",
+            idToken: "minutes",
             refreshToken: "days"
         },
 
