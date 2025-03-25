@@ -8,6 +8,8 @@ export interface AuthOutputs {
     adminGroupName: pulumi.Output<string>;
     moderatorGroupName: pulumi.Output<string>;
     userPoolArn: pulumi.Output<string>;
+    userPoolDomain: pulumi.Output<string>;
+    userPoolIssuerUrl: pulumi.Output<string>;
 }
 
 export function createAuthResources(
@@ -114,6 +116,12 @@ export function createAuthResources(
         ]
     });
 
+    // Create Cognito User Pool Domain
+    const userPoolDomain = new aws.cognito.UserPoolDomain("auth-userpool-domain", {
+        domain: `nounhub-auth-${stack}`,
+        userPoolId: userPool.id
+    });
+
     // Create Cognito User Groups
     const adminGroup = new aws.cognito.UserGroup("admin-group", {
         userPoolId: userPool.id,
@@ -134,6 +142,8 @@ export function createAuthResources(
         userPoolClientId: userPoolClient.id,
         adminGroupName: adminGroup.name,
         moderatorGroupName: moderatorGroup.name,
-        userPoolArn: userPool.arn
+        userPoolArn: userPool.arn,
+        userPoolDomain: userPoolDomain.domain,
+        userPoolIssuerUrl: pulumi.interpolate`https://cognito-idp.${aws.config.region}.amazonaws.com/${userPool.id}`
     };
 } 

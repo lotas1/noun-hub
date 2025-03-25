@@ -49,6 +49,8 @@ export const userPoolId = auth.userPoolId;
 export const userPoolClientId = auth.userPoolClientId;
 export const adminGroupName = auth.adminGroupName;
 export const moderatorGroupName = auth.moderatorGroupName;
+export const userPoolDomain = auth.userPoolDomain;
+export const userPoolIssuerUrl = auth.userPoolIssuerUrl;
 
 // Database exports
 export const userTableName = database.userTableName;
@@ -262,6 +264,18 @@ const api = new aws.apigatewayv2.Api("auth-api", {
     tags: commonTags
 });
 
+// Create a JWT Authorizer for the API using Cognito User Pool
+const jwtAuthorizer = new aws.apigatewayv2.Authorizer("jwt-authorizer", {
+    apiId: api.id,
+    authorizerType: "JWT",
+    name: `nounhub-jwt-authorizer-${stack}`,
+    jwtConfiguration: {
+        audiences: [auth.userPoolClientId],
+        issuer: auth.userPoolIssuerUrl,
+    },
+    identitySources: ["$request.header.Authorization"],
+});
+
 // Create Lambda integration for HTTP API
 const authIntegration = new aws.apigatewayv2.Integration("auth-lambda-integration", {
     apiId: api.id,
@@ -284,58 +298,70 @@ const feedIntegration = new aws.apigatewayv2.Integration("feed-lambda-integratio
 
 // Create routes for all auth endpoints
 const authRoutes = [
-    { path: "/auth/signup", method: "POST" },
-    { path: "/auth/signin", method: "POST" },
-    { path: "/auth/confirm", method: "POST" },
-    { path: "/auth/google", method: "POST" },
-    { path: "/auth/profile", method: "GET" },
-    { path: "/auth/refresh", method: "POST" },
-    { path: "/auth/resend-confirmation", method: "POST" },
-    { path: "/auth/forgot-password", method: "POST" },
-    { path: "/auth/confirm-forgot-password", method: "POST" },
-    { path: "/auth/signout", method: "POST" },
-    // Add new group management routes
-    { path: "/auth/groups", method: "GET" },
-    { path: "/auth/groups/{groupName}/users", method: "GET" },
-    { path: "/auth/groups/{groupName}/users/{username}", method: "POST" },
-    { path: "/auth/groups/{groupName}/users/{username}", method: "DELETE" },
-    { path: "/auth/users/{username}/groups", method: "GET" }
+    // Public routes (no authorization required)
+    { path: "/auth/signup", method: "POST", protected: false },
+    { path: "/auth/signin", method: "POST", protected: false },
+    { path: "/auth/confirm", method: "POST", protected: false },
+    { path: "/auth/google", method: "POST", protected: false },
+    { path: "/auth/resend-confirmation", method: "POST", protected: false },
+    { path: "/auth/forgot-password", method: "POST", protected: false },
+    { path: "/auth/confirm-forgot-password", method: "POST", protected: false },
+    
+    // Protected routes (require authorization)
+    { path: "/auth/profile", method: "GET", protected: true },
+    { path: "/auth/refresh", method: "POST", protected: true },
+    { path: "/auth/signout", method: "POST", protected: true },
+    { path: "/auth/groups", method: "GET", protected: true },
+    { path: "/auth/groups/{groupName}/users", method: "GET", protected: true },
+    { path: "/auth/groups/{groupName}/users/{username}", method: "POST", protected: true },
+    { path: "/auth/groups/{groupName}/users/{username}", method: "DELETE", protected: true },
+    { path: "/auth/users/{username}/groups", method: "GET", protected: true }
 ];
 
-// Create routes for all feed endpoints
+// Create routes for all feed endpoints (all protected)
 const feedRoutes = [
-    { path: "/feed/posts", method: "GET" },
-    { path: "/feed/posts", method: "POST" },
-    { path: "/feed/posts/{id}", method: "GET" },
-    { path: "/feed/posts/{id}", method: "PUT" },
-    { path: "/feed/posts/{id}", method: "DELETE" },
-    { path: "/feed/categories", method: "GET" },
-    { path: "/feed/categories", method: "POST" },
-    { path: "/feed/categories/{id}", method: "PUT" },
-    { path: "/feed/categories/{id}", method: "DELETE" },
-    { path: "/feed/posts/{id}/like", method: "POST" },
-    { path: "/feed/posts/{id}/like", method: "DELETE" },
-    { path: "/feed/posts/{id}/attachments", method: "POST" },
-    { path: "/feed/posts/{id}/attachments", method: "GET" },
-    { path: "/feed/attachments/{id}", method: "DELETE" },
-    { path: "/feed/posts/{id}/repost", method: "POST" }
+    { path: "/feed/posts", method: "GET", protected: true },
+    { path: "/feed/posts", method: "POST", protected: true },
+    { path: "/feed/posts/{id}", method: "GET", protected: true },
+    { path: "/feed/posts/{id}", method: "PUT", protected: true },
+    { path: "/feed/posts/{id}", method: "DELETE", protected: true },
+    { path: "/feed/categories", method: "GET", protected: true },
+    { path: "/feed/categories", method: "POST", protected: true },
+    { path: "/feed/categories/{id}", method: "PUT", protected: true },
+    { path: "/feed/categories/{id}", method: "DELETE", protected: true },
+    { path: "/feed/posts/{id}/like", method: "POST", protected: true },
+    { path: "/feed/posts/{id}/like", method: "DELETE", protected: true },
+    { path: "/feed/posts/{id}/attachments", method: "POST", protected: true },
+    { path: "/feed/posts/{id}/attachments", method: "GET", protected: true },
+    { path: "/feed/attachments/{id}", method: "DELETE", protected: true },
+    { path: "/feed/posts/{id}/repost", method: "POST", protected: true }
 ];
 
 // Create auth routes
 authRoutes.forEach((route, index) => {
-    new aws.apigatewayv2.Route(`auth-route-${index}`, {
+    const routeOptions: aws.apigatewayv2.RouteArgs = {
         apiId: api.id,
         routeKey: `${route.method} ${route.path}`,
         target: pulumi.interpolate`integrations/${authIntegration.id}`
-    });
+    };
+    
+    // Add authorizer to protected routes
+    if (route.protected) {
+        routeOptions.authorizationType = "JWT";
+        routeOptions.authorizerId = jwtAuthorizer.id;
+    }
+    
+    new aws.apigatewayv2.Route(`auth-route-${index}`, routeOptions);
 });
 
-// Create feed routes
+// Create feed routes (all protected)
 feedRoutes.forEach((route, index) => {
     new aws.apigatewayv2.Route(`feed-route-${index}`, {
         apiId: api.id,
         routeKey: `${route.method} ${route.path}`,
-        target: pulumi.interpolate`integrations/${feedIntegration.id}`
+        target: pulumi.interpolate`integrations/${feedIntegration.id}`,
+        authorizationType: "JWT",
+        authorizerId: jwtAuthorizer.id
     });
 });
 
@@ -407,6 +433,9 @@ export const customDomainEndpoint = pulumi.interpolate`https://${domainName}/${s
 
 // Export only the default API Gateway endpoint
 export const apiEndpoint = pulumi.interpolate`${api.apiEndpoint}/${stack}`;
+
+// Export JWT Authorizer ID
+export const jwtAuthorizerId = jwtAuthorizer.id;
 
 //------------------------------------------------------------
 // 5) IAM Role and Policy Configuration
