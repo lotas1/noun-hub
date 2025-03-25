@@ -585,6 +585,56 @@ func (h *FeedHandler) categoryExists(ctx context.Context, categoryID string) (bo
 	return getItemOutput.Item != nil, nil
 }
 
+// Helper function to get groups from token claims
+func getGroupsFromToken(token string) ([]string, error) {
+	// Parse the JWT token
+	parser := jwt.NewParser()
+	claims := jwt.MapClaims{}
+
+	_, _, err := parser.ParseUnverified(token, &claims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %v", err)
+	}
+
+	// Extract groups from cognito:groups claim
+	groupsClaim, ok := claims["cognito:groups"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	// Convert the groups claim to []string
+	groupsInterface, ok := groupsClaim.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid groups claim format")
+	}
+
+	groups := make([]string, len(groupsInterface))
+	for i, g := range groupsInterface {
+		groups[i], ok = g.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid group format at index %d", i)
+		}
+	}
+
+	return groups, nil
+}
+
+// Helper function to check if a user is an admin from their token
+func isUserAdmin(token string) (bool, error) {
+	groups, err := getGroupsFromToken(token)
+	if err != nil {
+		return false, err
+	}
+
+	for _, group := range groups {
+		if group == "admin" {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // @Summary Update a post
 // @Description Update an existing post with new information
 // @Tags Posts
@@ -652,18 +702,16 @@ func (h *FeedHandler) handleUpdatePost(ctx context.Context, request events.APIGa
 
 	// Check if user is admin or the post author (moderator can't edit admin posts)
 	if !isAdmin(claims) && post.AuthorID != claims.Username {
-		// Get the author's groups to check if they're admin
-		authorGroups, err := h.getUserGroups(ctx, post.AuthorID)
+		// Check if the author is an admin using their token
+		token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+		isAuthorAdmin, err := isUserAdmin(token)
 		if err != nil {
-			log.Printf("Error getting author groups: %v", err)
+			log.Printf("Error checking author admin status: %v", err)
 			return sendAPIResponse(500, false, "", nil, "Error verifying permissions"), nil
 		}
 
-		// Check if the author is an admin
-		for _, group := range authorGroups {
-			if group == h.adminGroup {
-				return sendAPIResponse(403, false, "", nil, "Moderators cannot edit posts created by admins"), nil
-			}
+		if isAuthorAdmin {
+			return sendAPIResponse(403, false, "", nil, "Moderators cannot edit posts created by admins"), nil
 		}
 	}
 
@@ -703,25 +751,6 @@ func (h *FeedHandler) handleUpdatePost(ctx context.Context, request events.APIGa
 	}
 
 	return sendAPIResponse(200, true, "Post updated successfully", post, ""), nil
-}
-
-// Helper function to get a user's groups
-func (h *FeedHandler) getUserGroups(ctx context.Context, username string) ([]string, error) {
-	adminListGroupsOutput, err := h.cognitoClient.AdminListGroupsForUser(ctx, &cognitoidentityprovider.AdminListGroupsForUserInput{
-		UserPoolId: aws.String(h.userPoolID),
-		Username:   aws.String(username),
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	var groups []string
-	for _, group := range adminListGroupsOutput.Groups {
-		groups = append(groups, *group.GroupName)
-	}
-
-	return groups, nil
 }
 
 // @Summary Delete a post
@@ -778,18 +807,16 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 
 	// Check if user is admin or the post author (moderator can't delete admin posts)
 	if !isAdmin(claims) && post.AuthorID != claims.Username {
-		// Get the author's groups to check if they're admin
-		authorGroups, err := h.getUserGroups(ctx, post.AuthorID)
+		// Check if the author is an admin using their token
+		token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+		isAuthorAdmin, err := isUserAdmin(token)
 		if err != nil {
-			log.Printf("Error getting author groups: %v", err)
+			log.Printf("Error checking author admin status: %v", err)
 			return sendAPIResponse(500, false, "", nil, "Error verifying permissions"), nil
 		}
 
-		// Check if the author is an admin
-		for _, group := range authorGroups {
-			if group == h.adminGroup {
-				return sendAPIResponse(403, false, "", nil, "Moderators cannot delete posts created by admins"), nil
-			}
+		if isAuthorAdmin {
+			return sendAPIResponse(403, false, "", nil, "Moderators cannot delete posts created by admins"), nil
 		}
 	}
 

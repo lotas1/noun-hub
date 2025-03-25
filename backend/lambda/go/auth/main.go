@@ -1202,8 +1202,8 @@ func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGa
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
-	// Check if user is admin
-	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
+	// Check if user is admin using token claims
+	isAdmin, err := isUserInGroupFromToken(token, h.adminGroup)
 	if err != nil || !isAdmin {
 		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
@@ -1243,10 +1243,16 @@ func (h *AuthHandler) handleListGroups(ctx context.Context, request events.APIGa
 // @Failure 500 {object} APIResponse "Internal server error"
 // @Router /groups/{groupName}/users [get]
 func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Check if user is authenticated and is an admin
+	// Check if user is authenticated
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Check if user is admin using token claims
+	isAdmin, err := isUserInGroupFromToken(token, h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
 
 	// Extract group name from path
@@ -1255,12 +1261,6 @@ func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events
 		return sendAPIResponse(400, false, "", nil, "Invalid path"), nil
 	}
 	groupName := pathParts[4]
-
-	// Check if user is admin
-	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
-	if err != nil || !isAdmin {
-		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
-	}
 
 	// List users in group
 	input := &cognitoidentityprovider.ListUsersInGroupInput{
@@ -1302,10 +1302,16 @@ func (h *AuthHandler) handleListUsersInGroup(ctx context.Context, request events
 // @Failure 500 {object} APIResponse "Internal server error"
 // @Router /groups/{groupName}/users/{email} [post]
 func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Check if user is authenticated and is an admin
+	// Check if user is authenticated
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Check if user is admin using token claims
+	isAdmin, err := isUserInGroupFromToken(token, h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
 
 	// Extract group name and email from path
@@ -1335,12 +1341,6 @@ func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.A
 
 	// Use the actual username (UUID) for group operations
 	username := *users.Users[0].Username
-
-	// Check if user is admin
-	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
-	if err != nil || !isAdmin {
-		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
-	}
 
 	// Check if target user exists
 	_, err = h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
@@ -1397,10 +1397,16 @@ func (h *AuthHandler) handleAddUserToGroup(ctx context.Context, request events.A
 // @Failure 500 {object} APIResponse "Internal server error"
 // @Router /groups/{groupName}/users/{email} [delete]
 func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Check if user is authenticated and is an admin
+	// Check if user is authenticated
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Check if user is admin using token claims
+	isAdmin, err := isUserInGroupFromToken(token, h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
 
 	// Extract group name and email from path
@@ -1430,12 +1436,6 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 
 	// Use the actual username (UUID) for group operations
 	username := *users.Users[0].Username
-
-	// Check if user is admin
-	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
-	if err != nil || !isAdmin {
-		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
-	}
 
 	// Check if target user exists
 	_, err = h.cognitoClient.AdminGetUser(ctx, &cognitoidentityprovider.AdminGetUserInput{
@@ -1475,10 +1475,16 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 // @Failure 500 {object} APIResponse "Internal server error"
 // @Router /users/{email}/groups [get]
 func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	// Check if user is authenticated and is an admin
+	// Check if user is authenticated
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
 		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+	}
+
+	// Check if user is admin using token claims
+	isAdmin, err := isUserInGroupFromToken(token, h.adminGroup)
+	if err != nil || !isAdmin {
+		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
 	}
 
 	// Extract email from path
@@ -1508,12 +1514,6 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 	// Use the actual username (UUID) for group operations
 	username := *users.Users[0].Username
 
-	// Check if user is admin
-	isAdmin, err := h.isUserInGroup(ctx, getUsernameFromToken(token), h.adminGroup)
-	if err != nil || !isAdmin {
-		return sendAPIResponse(403, false, "", nil, "Forbidden"), nil
-	}
-
 	// Get user's groups
 	groups, err := h.cognitoClient.AdminListGroupsForUser(ctx, &cognitoidentityprovider.AdminListGroupsForUserInput{
 		UserPoolId: aws.String(h.userPoolID),
@@ -1534,20 +1534,49 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 	return sendAPIResponse(200, true, fmt.Sprintf("Groups for user %s retrieved successfully", email), groupNames, ""), nil
 }
 
-// Helper function to check if a user is in a group
-func (h *AuthHandler) isUserInGroup(ctx context.Context, username string, groupName string) (bool, error) {
-	input := &cognitoidentityprovider.AdminListGroupsForUserInput{
-		UserPoolId: aws.String(h.userPoolID),
-		Username:   aws.String(username),
+// Helper function to get groups from token claims
+func getGroupsFromToken(token string) ([]string, error) {
+	// Parse the JWT token
+	parser := jwt.NewParser()
+	claims := jwt.MapClaims{}
+
+	_, _, err := parser.ParseUnverified(token, &claims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %v", err)
 	}
 
-	result, err := h.cognitoClient.AdminListGroupsForUser(ctx, input)
+	// Extract groups from cognito:groups claim
+	groupsClaim, ok := claims["cognito:groups"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	// Convert the groups claim to []string
+	groupsInterface, ok := groupsClaim.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid groups claim format")
+	}
+
+	groups := make([]string, len(groupsInterface))
+	for i, g := range groupsInterface {
+		groups[i], ok = g.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid group format at index %d", i)
+		}
+	}
+
+	return groups, nil
+}
+
+// Helper function to check if a user is in a group using token claims
+func isUserInGroupFromToken(token string, groupName string) (bool, error) {
+	groups, err := getGroupsFromToken(token)
 	if err != nil {
 		return false, err
 	}
 
-	for _, group := range result.Groups {
-		if aws.ToString(group.GroupName) == groupName {
+	for _, group := range groups {
+		if group == groupName {
 			return true, nil
 		}
 	}

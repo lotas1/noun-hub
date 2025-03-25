@@ -24,7 +24,7 @@ A central place to find school news and announcements quickly.
 - Only admins and moderators can create, edit, or delete posts.
 - Admins can edit or delete any post, but moderators can't edit or delete posts made by admins.
 - Everyone can like posts, but only moderators and admins can repost or quote.
-- Permissions are managed through user groups (moderators, admins) using AWS Cognito group, validated through JWT access tokens.
+- Permissions are managed through user groups (moderators, admins) using "cognito:groups" claim in the access token for all RBAC checks
 
 ## API Endpoints
 

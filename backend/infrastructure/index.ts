@@ -76,7 +76,24 @@ const cognitoPolicy = {
         {
             Effect: "Allow",
             Action: [
-                "cognito-idp:AdminGetUser",
+                "cognito-idp:SignUp",
+                "cognito-idp:InitiateAuth",
+                "cognito-idp:RespondToAuthChallenge",
+                "cognito-idp:ConfirmSignUp",
+                "cognito-idp:ForgotPassword",
+                "cognito-idp:ConfirmForgotPassword",
+                "cognito-idp:GetUser",
+                "cognito-idp:UpdateUserAttributes",
+                "cognito-idp:VerifyUserAttribute",
+                "cognito-idp:ResendConfirmationCode",
+                "cognito-idp:ListUsers",
+                "cognito-idp:AdminCreateUser",
+                "cognito-idp:AdminUpdateUserAttributes",
+                "cognito-idp:GlobalSignOut",
+                // Group management permissions still needed for admin operations
+                "cognito-idp:AdminAddUserToGroup",
+                "cognito-idp:AdminRemoveUserFromGroup",
+                "cognito-idp:ListGroups",
                 "cognito-idp:ListUsersInGroup"
             ],
             Resource: auth.userPoolArn
@@ -429,7 +446,6 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:ForgotPassword",
                     "cognito-idp:ConfirmForgotPassword",
                     "cognito-idp:GetUser",
-                    "cognito-idp:AdminGetUser",
                     "cognito-idp:UpdateUserAttributes",
                     "cognito-idp:VerifyUserAttribute",
                     "cognito-idp:ResendConfirmationCode",
@@ -437,10 +453,9 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "cognito-idp:AdminCreateUser",
                     "cognito-idp:AdminUpdateUserAttributes",
                     "cognito-idp:GlobalSignOut",
-                    // Add new permissions for group management
+                    // Group management permissions still needed for admin operations
                     "cognito-idp:AdminAddUserToGroup",
                     "cognito-idp:AdminRemoveUserFromGroup",
-                    "cognito-idp:AdminListGroupsForUser",
                     "cognito-idp:ListGroups",
                     "cognito-idp:ListUsersInGroup"
                 ],
