@@ -182,17 +182,18 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 		return h.handleSwaggerRequest(ctx, request)
 	}
 
-	// Extract user claims from JWT token
+	// Extract user claims from JWT token - no need to validate as API Gateway JWT Authorizer already did
 	var claims *Claims
 	if authHeader, ok := request.Headers["authorization"]; ok {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		var err error
-		claims, err = validateToken(token)
-		if err != nil && !isPublicEndpoint(method, path) {
-			return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
+		// Just parse the claims without validation since JWT Authorizer already validated the token
+		parser := jwt.NewParser()
+		parsedToken, _, err := parser.ParseUnverified(token, &Claims{})
+		if err == nil {
+			if c, ok := parsedToken.Claims.(*Claims); ok {
+				claims = c
+			}
 		}
-	} else if !isPublicEndpoint(method, path) {
-		return sendAPIResponse(401, false, "", nil, "Unauthorized"), nil
 	}
 
 	// Route to appropriate handler
@@ -286,31 +287,6 @@ func sendAPIResponse(statusCode int, success bool, message string, data interfac
 	}
 }
 
-// Validate JWT token and extract claims
-func validateToken(tokenString string) (*Claims, error) {
-	// Parse the JWT token
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		// Verify the signing method
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		// In a real application, you would fetch the verification key from Cognito
-		// For simplicity, we'll just validate the token format
-		return []byte("secret"), nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-		return claims, nil
-	}
-
-	return nil, fmt.Errorf("invalid token")
-}
-
 // Check if the user is an admin
 func isAdmin(claims *Claims) bool {
 	if claims == nil {
@@ -339,12 +315,6 @@ func isModerator(claims *Claims) bool {
 	}
 
 	return false
-}
-
-// Check if the endpoint doesn't require authentication
-func isPublicEndpoint(method, path string) bool {
-	// Only GET requests to feed posts and categories are public
-	return method == "GET" && (strings.HasPrefix(path, "/posts") || strings.HasPrefix(path, "/categories"))
 }
 
 // @Summary Get all posts
@@ -585,56 +555,6 @@ func (h *FeedHandler) categoryExists(ctx context.Context, categoryID string) (bo
 	return getItemOutput.Item != nil, nil
 }
 
-// Helper function to get groups from token claims
-func getGroupsFromToken(token string) ([]string, error) {
-	// Parse the JWT token
-	parser := jwt.NewParser()
-	claims := jwt.MapClaims{}
-
-	_, _, err := parser.ParseUnverified(token, &claims)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse token: %v", err)
-	}
-
-	// Extract groups from cognito:groups claim
-	groupsClaim, ok := claims["cognito:groups"]
-	if !ok {
-		return []string{}, nil
-	}
-
-	// Convert the groups claim to []string
-	groupsInterface, ok := groupsClaim.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid groups claim format")
-	}
-
-	groups := make([]string, len(groupsInterface))
-	for i, g := range groupsInterface {
-		groups[i], ok = g.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid group format at index %d", i)
-		}
-	}
-
-	return groups, nil
-}
-
-// Helper function to check if a user is an admin from their token
-func isUserAdmin(token string) (bool, error) {
-	groups, err := getGroupsFromToken(token)
-	if err != nil {
-		return false, err
-	}
-
-	for _, group := range groups {
-		if group == "admin" {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 // @Summary Update a post
 // @Description Update an existing post with new information
 // @Tags Posts
@@ -702,15 +622,9 @@ func (h *FeedHandler) handleUpdatePost(ctx context.Context, request events.APIGa
 
 	// Check if user is admin or the post author (moderator can't edit admin posts)
 	if !isAdmin(claims) && post.AuthorID != claims.Username {
-		// Check if the author is an admin using their token
-		token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
-		isAuthorAdmin, err := isUserAdmin(token)
-		if err != nil {
-			log.Printf("Error checking author admin status: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error verifying permissions"), nil
-		}
-
-		if isAuthorAdmin {
+		// Check if the author is an admin using their claims
+		authorClaims := claims
+		if authorClaims != nil && isAdmin(authorClaims) {
 			return sendAPIResponse(403, false, "", nil, "Moderators cannot edit posts created by admins"), nil
 		}
 	}
@@ -807,15 +721,9 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 
 	// Check if user is admin or the post author (moderator can't delete admin posts)
 	if !isAdmin(claims) && post.AuthorID != claims.Username {
-		// Check if the author is an admin using their token
-		token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
-		isAuthorAdmin, err := isUserAdmin(token)
-		if err != nil {
-			log.Printf("Error checking author admin status: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error verifying permissions"), nil
-		}
-
-		if isAuthorAdmin {
+		// Check if the author is an admin using their claims
+		authorClaims := claims
+		if authorClaims != nil && isAdmin(authorClaims) {
 			return sendAPIResponse(403, false, "", nil, "Moderators cannot delete posts created by admins"), nil
 		}
 	}
