@@ -4,7 +4,6 @@
 
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
-import * as awsx from "@pulumi/awsx";
 // Import the API documentation module
 import * as apiDocs from "./api-docs";
 import { createAuthResources } from "./modules/auth";
