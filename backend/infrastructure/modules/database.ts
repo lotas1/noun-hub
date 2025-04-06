@@ -5,15 +5,11 @@ export interface DatabaseOutputs {
     userTableName: pulumi.Output<string>;
     postTableName: pulumi.Output<string>;
     categoryTableName: pulumi.Output<string>;
-    attachmentTableName: pulumi.Output<string>;
     likeTableName: pulumi.Output<string>;
-    feedBucketName: pulumi.Output<string>;
     userTableArn: pulumi.Output<string>;
     postTableArn: pulumi.Output<string>;
     categoryTableArn: pulumi.Output<string>;
-    attachmentTableArn: pulumi.Output<string>;
     likeTableArn: pulumi.Output<string>;
-    feedBucketArn: pulumi.Output<string>;
 }
 
 export function createDatabaseResources(
@@ -108,29 +104,6 @@ export function createDatabaseResources(
         tags: commonTags,
     });
 
-    // Create DynamoDB Attachment Table
-    const attachmentTable = new aws.dynamodb.Table("attachment-table", {
-        name: `nounhub-attachment-table-${stack}`,
-        attributes: [
-            { name: "id", type: "S" },
-            { name: "post_id", type: "S" },
-        ],
-        hashKey: "id",
-        globalSecondaryIndexes: [
-            {
-                name: "PostIndex",
-                hashKey: "post_id",
-                projectionType: "ALL",
-                readCapacity: 2,
-                writeCapacity: 2,
-            }
-        ],
-        billingMode: "PROVISIONED",
-        readCapacity: 2,
-        writeCapacity: 2,
-        tags: commonTags,
-    });
-
     // Create DynamoDB Like Table
     const likeTable = new aws.dynamodb.Table("like-table", {
         name: `nounhub-like-table-${stack}`,
@@ -155,33 +128,14 @@ export function createDatabaseResources(
         tags: commonTags,
     });
 
-    // Create S3 bucket for feed attachments
-    const feedBucket = new aws.s3.Bucket("feed-bucket", {
-        bucket: `nounhub-feed-attachments-${stack}`,
-        acl: "private",
-        corsRules: [
-            {
-                allowedHeaders: ["*"],
-                allowedMethods: ["GET", "PUT", "POST", "DELETE"],
-                allowedOrigins: ["*"],
-                maxAgeSeconds: 3000,
-            },
-        ],
-        tags: commonTags,
-    });
-
     return {
         userTableName: userTable.name,
         postTableName: postTable.name,
         categoryTableName: categoryTable.name,
-        attachmentTableName: attachmentTable.name,
         likeTableName: likeTable.name,
-        feedBucketName: feedBucket.bucket,
         userTableArn: userTable.arn,
         postTableArn: postTable.arn,
         categoryTableArn: categoryTable.arn,
-        attachmentTableArn: attachmentTable.arn,
-        likeTableArn: likeTable.arn,
-        feedBucketArn: feedBucket.arn
+        likeTableArn: likeTable.arn
     };
 } 

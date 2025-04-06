@@ -5,8 +5,6 @@ A central place to find school news and announcements quickly.
 
 ## Features
 - Easy posting and viewing of news, with each post requiring a title and a body.
-- Option to include images and files.
-- Files include metadata: File Name, File Type, File Size, and Preview Thumbnail (automatically generated for images and documents).
 - Users can "Like" posts.
 - Only moderators and admins can "Repost" or "Quote" posts.
 - Commenting is not allowed.
@@ -45,11 +43,6 @@ A central place to find school news and announcements quickly.
 - `POST /feed/posts/{id}/like` - Like a post
 - `DELETE /feed/posts/{id}/like` - Unlike a post
 
-### Attachments
-- `POST /feed/posts/{id}/attachments` - Add an attachment to a post (moderators and admins only)
-- `GET /feed/posts/{id}/attachments` - Get all attachments for a post
-- `DELETE /feed/attachments/{id}` - Delete an attachment (moderators and admins only)
-
 ### Repost
 - `POST /feed/posts/{id}/repost` - Repost a post (moderators and admins only)
 
@@ -66,7 +59,6 @@ A central place to find school news and announcements quickly.
 - `created_at` (String): Timestamp when the post was created
 - `updated_at` (String): Timestamp when the post was last updated
 - `likes` (Number): Number of likes the post has received
-- `has_attachment` (Boolean): Whether the post has attachments
 
 #### Categories Table
 - `id` (String, Primary Key): Unique identifier for the category
@@ -74,25 +66,10 @@ A central place to find school news and announcements quickly.
 - `created_at` (String): Timestamp when the category was created
 - `updated_at` (String): Timestamp when the category was last updated
 
-#### Attachments Table
-- `id` (String, Primary Key): Unique identifier for the attachment
-- `post_id` (String): ID of the post the attachment belongs to
-- `file_name` (String): Original file name
-- `file_type` (String): MIME type of the file
-- `file_size` (Number): Size of the file in bytes
-- `s3_key` (String): S3 key where the file is stored
-- `has_thumbnail` (Boolean): Whether the attachment has a thumbnail
-- `thumbnail_key` (String): S3 key where the thumbnail is stored (if applicable)
-- `created_at` (String): Timestamp when the attachment was created
-
 #### Likes Table
 - `user_id` (String, Partition Key): ID of the user who liked the post
 - `post_id` (String, Sort Key): ID of the liked post
 - `created_at` (String): Timestamp when the like was created
-
-### Storage
-- Files are stored in an S3 bucket with appropriate permissions.
-- Thumbnails are automatically generated for image and document files.
 
 ### Authentication & Authorization
 - JWT tokens from AWS Cognito are used for authentication.

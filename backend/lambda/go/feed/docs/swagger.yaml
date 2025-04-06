@@ -10,27 +10,6 @@ definitions:
       success:
         type: boolean
     type: object
-  main.Attachment:
-    properties:
-      created_at:
-        type: string
-      file_name:
-        type: string
-      file_size:
-        type: integer
-      file_type:
-        type: string
-      has_thumbnail:
-        type: boolean
-      id:
-        type: string
-      post_id:
-        type: string
-      s3_key:
-        type: string
-      thumbnail_key:
-        type: string
-    type: object
   main.Category:
     properties:
       created_at:
@@ -70,8 +49,6 @@ definitions:
         type: string
       created_at:
         type: string
-      has_attachment:
-        type: boolean
       id:
         type: string
       likes:
@@ -101,45 +78,6 @@ info:
   title: NounHub Feed API
   version: "1.0"
 paths:
-  /attachments/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete an attachment
-      parameters:
-      - description: Attachment ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Attachment deleted
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "403":
-          description: Forbidden - not post owner or admin
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "404":
-          description: Attachment not found
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Delete attachment
-      tags:
-      - Attachments
   /categories:
     get:
       consumes:
@@ -502,95 +440,6 @@ paths:
       summary: Update a post
       tags:
       - Posts
-  /posts/{id}/attachments:
-    get:
-      consumes:
-      - application/json
-      description: Get all attachments for a post
-      parameters:
-      - description: Post ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: List of attachments
-          schema:
-            allOf:
-            - $ref: '#/definitions/main.APIResponse'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/main.Attachment'
-                  type: array
-              type: object
-        "404":
-          description: Post not found
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      summary: Get post attachments
-      tags:
-      - Attachments
-    post:
-      consumes:
-      - application/json
-      description: Add a file attachment to a post
-      parameters:
-      - description: Post ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Base64 encoded file content with metadata
-        in: body
-        name: attachment
-        required: true
-        schema:
-          type: string
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Attachment added
-          schema:
-            allOf:
-            - $ref: '#/definitions/main.APIResponse'
-            - properties:
-                data:
-                  $ref: '#/definitions/main.Attachment'
-              type: object
-        "400":
-          description: Invalid input
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "403":
-          description: Forbidden - not post owner or admin
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "404":
-          description: Post not found
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Add attachment to post
-      tags:
-      - Attachments
   /posts/{id}/like:
     delete:
       consumes:

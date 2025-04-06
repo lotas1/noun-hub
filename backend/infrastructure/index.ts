@@ -55,9 +55,7 @@ export const userPoolIssuerUrl = auth.userPoolIssuerUrl;
 export const userTableName = database.userTableName;
 export const postTableName = database.postTableName;
 export const categoryTableName = database.categoryTableName;
-export const attachmentTableName = database.attachmentTableName;
 export const likeTableName = database.likeTableName;
-export const feedBucketName = database.feedBucketName;
 
 // Lambda function environment variables
 const authLambdaEnvironment = {
@@ -106,8 +104,6 @@ const dynamoPolicy = {
                 pulumi.interpolate`${database.postTableArn}/index/*`,
                 database.categoryTableArn,
                 pulumi.interpolate`${database.categoryTableArn}/index/*`,
-                database.attachmentTableArn,
-                pulumi.interpolate`${database.attachmentTableArn}/index/*`,
                 database.likeTableArn,
                 pulumi.interpolate`${database.likeTableArn}/index/*`
             ]
@@ -115,24 +111,7 @@ const dynamoPolicy = {
     ]
 };
 
-// Lambda function IAM policy for S3
-const s3Policy = {
-    Version: "2012-10-17",
-    Statement: [
-        {
-            Effect: "Allow",
-            Action: [
-                "s3:PutObject",
-                "s3:GetObject",
-                "s3:DeleteObject"
-            ],
-            Resource: [
-                database.feedBucketArn,
-                pulumi.interpolate`${database.feedBucketArn}/*`
-            ]
-        }
-    ]
-};
+
 
 //------------------------------------------------------------
 // 4) Lambda Function Setup
@@ -190,9 +169,7 @@ const feedLambdaEnvironment = {
     USER_POOL_ID: auth.userPoolId,
     POST_TABLE_NAME: database.postTableName,
     CATEGORY_TABLE_NAME: database.categoryTableName,
-    ATTACHMENT_TABLE_NAME: database.attachmentTableName,
     LIKE_TABLE_NAME: database.likeTableName,
-    BUCKET_NAME: database.feedBucketName,
     ADMIN_GROUP: "admin",
     MODERATOR_GROUP: "moderator"
 };
@@ -330,10 +307,8 @@ const feedRoutes = [
     { path: "/feed/categories/{id}", method: "DELETE", protected: true },
     { path: "/feed/posts/{id}/like", method: "POST", protected: true },
     { path: "/feed/posts/{id}/like", method: "DELETE", protected: true },
-    { path: "/feed/posts/{id}/attachments", method: "POST", protected: true },
-    { path: "/feed/posts/{id}/attachments", method: "GET", protected: true },
-    { path: "/feed/attachments/{id}", method: "DELETE", protected: true },
-    { path: "/feed/posts/{id}/repost", method: "POST", protected: true }
+    { path: "/feed/posts/{id}/repost", method: "POST", protected: true },
+    { path: "/feed/posts/{id}/comments/{commentId}", method: "DELETE", protected: true }
 ];
 
 // Create auth routes
@@ -536,23 +511,8 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     pulumi.interpolate`${database.postTableArn}/index/*`,
                     database.categoryTableArn,
                     pulumi.interpolate`${database.categoryTableArn}/index/*`,
-                    database.attachmentTableArn,
-                    pulumi.interpolate`${database.attachmentTableArn}/index/*`,
                     database.likeTableArn,
                     pulumi.interpolate`${database.likeTableArn}/index/*`
-                ]
-            },
-            {
-                Effect: "Allow",
-                Action: [
-                    "s3:PutObject",
-                    "s3:GetObject",
-                    "s3:DeleteObject",
-                    "s3:ListBucket"
-                ],
-                Resource: [
-                    database.feedBucketArn,
-                    pulumi.interpolate`${database.feedBucketArn}/*`
                 ]
             },
             {

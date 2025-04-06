@@ -28,7 +28,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbTypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	_ "github.com/swaggo/swag" // for swagger annotations
@@ -44,15 +43,14 @@ type APIResponse struct {
 
 // Post represents a feed post
 type Post struct {
-	ID            string    `json:"id" dynamodbav:"id"`
-	Title         string    `json:"title" dynamodbav:"title"`
-	Body          string    `json:"body" dynamodbav:"body"`
-	AuthorID      string    `json:"author_id" dynamodbav:"author_id"`
-	CategoryID    string    `json:"category_id" dynamodbav:"category_id"`
-	CreatedAt     time.Time `json:"created_at" dynamodbav:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at" dynamodbav:"updated_at"`
-	Likes         int       `json:"likes" dynamodbav:"likes"`
-	HasAttachment bool      `json:"has_attachment" dynamodbav:"has_attachment"`
+	ID         string    `json:"id" dynamodbav:"id"`
+	Title      string    `json:"title" dynamodbav:"title"`
+	Body       string    `json:"body" dynamodbav:"body"`
+	AuthorID   string    `json:"author_id" dynamodbav:"author_id"`
+	CategoryID string    `json:"category_id" dynamodbav:"category_id"`
+	CreatedAt  time.Time `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	Likes      int       `json:"likes" dynamodbav:"likes"`
 }
 
 // Category represents a post category
@@ -61,19 +59,6 @@ type Category struct {
 	Name      string    `json:"name" dynamodbav:"name"`
 	CreatedAt time.Time `json:"created_at" dynamodbav:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" dynamodbav:"updated_at"`
-}
-
-// Attachment represents a file attached to a post
-type Attachment struct {
-	ID           string    `json:"id" dynamodbav:"id"`
-	PostID       string    `json:"post_id" dynamodbav:"post_id"`
-	FileName     string    `json:"file_name" dynamodbav:"file_name"`
-	FileType     string    `json:"file_type" dynamodbav:"file_type"`
-	FileSize     int64     `json:"file_size" dynamodbav:"file_size"`
-	S3Key        string    `json:"s3_key" dynamodbav:"s3_key"`
-	HasThumbnail bool      `json:"has_thumbnail" dynamodbav:"has_thumbnail"`
-	ThumbnailKey string    `json:"thumbnail_key" dynamodbav:"thumbnail_key"`
-	CreatedAt    time.Time `json:"created_at" dynamodbav:"created_at"`
 }
 
 // Like represents a user's like on a post
@@ -104,17 +89,14 @@ type CreateCategoryRequest struct {
 
 // FeedHandler handles feed operations
 type FeedHandler struct {
-	dynamodbClient      *dynamodb.Client
-	cognitoClient       *cognitoidentityprovider.Client
-	s3Client            *s3.Client
-	postTableName       string
-	categoryTableName   string
-	attachmentTableName string
-	likeTableName       string
-	userPoolID          string
-	bucketName          string
-	adminGroup          string
-	moderatorGroup      string
+	dynamodbClient    *dynamodb.Client
+	cognitoClient     *cognitoidentityprovider.Client
+	postTableName     string
+	categoryTableName string
+	likeTableName     string
+	userPoolID        string
+	adminGroup        string
+	moderatorGroup    string
 }
 
 // Claims represents JWT token claims
@@ -139,32 +121,24 @@ func main() {
 	// Initialize Cognito client
 	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
 
-	// Initialize S3 client
-	s3Client := s3.NewFromConfig(cfg)
-
 	// Get environment variables
 	postTableName := os.Getenv("POST_TABLE_NAME")
 	categoryTableName := os.Getenv("CATEGORY_TABLE_NAME")
-	attachmentTableName := os.Getenv("ATTACHMENT_TABLE_NAME")
 	likeTableName := os.Getenv("LIKE_TABLE_NAME")
 	userPoolID := os.Getenv("USER_POOL_ID")
-	bucketName := os.Getenv("BUCKET_NAME")
 	adminGroup := os.Getenv("ADMIN_GROUP")
 	moderatorGroup := os.Getenv("MODERATOR_GROUP")
 
 	// Create handler
 	handler := &FeedHandler{
-		dynamodbClient:      dynamodbClient,
-		cognitoClient:       cognitoClient,
-		s3Client:            s3Client,
-		postTableName:       postTableName,
-		categoryTableName:   categoryTableName,
-		attachmentTableName: attachmentTableName,
-		likeTableName:       likeTableName,
-		userPoolID:          userPoolID,
-		bucketName:          bucketName,
-		adminGroup:          adminGroup,
-		moderatorGroup:      moderatorGroup,
+		dynamodbClient:    dynamodbClient,
+		cognitoClient:     cognitoClient,
+		postTableName:     postTableName,
+		categoryTableName: categoryTableName,
+		likeTableName:     likeTableName,
+		userPoolID:        userPoolID,
+		adminGroup:        adminGroup,
+		moderatorGroup:    moderatorGroup,
 	}
 
 	// Start Lambda handler
@@ -225,14 +199,6 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 		return h.handleLikePost(ctx, request, claims)
 	case method == "DELETE" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/like"):
 		return h.handleUnlikePost(ctx, request, claims)
-
-	// Attachment endpoints
-	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/attachments"):
-		return h.handleAddAttachment(ctx, request, claims)
-	case method == "GET" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/attachments"):
-		return h.handleGetAttachments(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/attachments/"):
-		return h.handleDeleteAttachment(ctx, request, claims)
 
 	// Repost endpoints
 	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/repost"):
@@ -506,15 +472,14 @@ func (h *FeedHandler) handleCreatePost(ctx context.Context, request events.APIGa
 	// Create a new post
 	now := time.Now()
 	post := Post{
-		ID:            uuid.New().String(),
-		Title:         createPostReq.Title,
-		Body:          createPostReq.Body,
-		AuthorID:      claims.Username,
-		CategoryID:    createPostReq.CategoryID,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-		Likes:         0,
-		HasAttachment: false,
+		ID:         uuid.New().String(),
+		Title:      createPostReq.Title,
+		Body:       createPostReq.Body,
+		AuthorID:   claims.Username,
+		CategoryID: createPostReq.CategoryID,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Likes:      0,
 	}
 
 	// Marshal the post
@@ -739,65 +704,6 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 	if err != nil {
 		log.Printf("Error deleting post: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error deleting post"), nil
-	}
-
-	// If the post has attachments, delete them as well
-	if post.HasAttachment {
-		// Query for attachments
-		queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
-			TableName:              aws.String(h.attachmentTableName),
-			IndexName:              aws.String("PostIndex"),
-			KeyConditionExpression: aws.String("post_id = :postId"),
-			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
-				":postId": &ddbTypes.AttributeValueMemberS{Value: postID},
-			},
-		})
-
-		if err != nil {
-			log.Printf("Error querying attachments: %v", err)
-			// Continue with post deletion even if attachment query fails
-		} else {
-			// Delete attachments
-			var attachments []Attachment
-			err = attributevalue.UnmarshalListOfMaps(queryOutput.Items, &attachments)
-			if err == nil {
-				for _, attachment := range attachments {
-					// Delete attachment record
-					_, err = h.dynamodbClient.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-						TableName: aws.String(h.attachmentTableName),
-						Key: map[string]ddbTypes.AttributeValue{
-							"id": &ddbTypes.AttributeValueMemberS{Value: attachment.ID},
-						},
-					})
-
-					if err != nil {
-						log.Printf("Error deleting attachment record: %v", err)
-					}
-
-					// Delete the file from S3
-					_, err = h.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-						Bucket: aws.String(h.bucketName),
-						Key:    aws.String(attachment.S3Key),
-					})
-
-					if err != nil {
-						log.Printf("Error deleting attachment file: %v", err)
-					}
-
-					// Delete thumbnail if exists
-					if attachment.HasThumbnail && attachment.ThumbnailKey != "" {
-						_, err = h.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-							Bucket: aws.String(h.bucketName),
-							Key:    aws.String(attachment.ThumbnailKey),
-						})
-
-						if err != nil {
-							log.Printf("Error deleting thumbnail: %v", err)
-						}
-					}
-				}
-			}
-		}
 	}
 
 	return sendAPIResponse(200, true, "Post deleted successfully", nil, ""), nil
@@ -1327,69 +1233,6 @@ func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGa
 	}
 
 	return sendAPIResponse(200, true, "Post unliked successfully", updatedPost, ""), nil
-}
-
-// @Summary Add attachment to post
-// @Description Add a file attachment to a post
-// @Tags Attachments
-// @Accept json
-// @Produce json
-// @Param id path string true "Post ID"
-// @Param attachment body string true "Base64 encoded file content with metadata"
-// @Security BearerAuth
-// @Success 201 {object} APIResponse{data=Attachment} "Attachment added"
-// @Failure 400 {object} APIResponse "Invalid input"
-// @Failure 401 {object} APIResponse "Unauthorized"
-// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
-// @Failure 404 {object} APIResponse "Post not found"
-// @Failure 500 {object} APIResponse "Server error"
-// @Router /posts/{id}/attachments [post]
-func (h *FeedHandler) handleAddAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// Only moderators and admins can add attachments
-	if !isModerator(claims) {
-		return sendAPIResponse(403, false, "", nil, "Only moderators and admins can add attachments"), nil
-	}
-
-	// TODO: Implement add attachment logic
-	return sendAPIResponse(201, true, "Attachment added successfully", Attachment{}, ""), nil
-}
-
-// @Summary Get post attachments
-// @Description Get all attachments for a post
-// @Tags Attachments
-// @Accept json
-// @Produce json
-// @Param id path string true "Post ID"
-// @Success 200 {object} APIResponse{data=[]Attachment} "List of attachments"
-// @Failure 404 {object} APIResponse "Post not found"
-// @Failure 500 {object} APIResponse "Server error"
-// @Router /posts/{id}/attachments [get]
-func (h *FeedHandler) handleGetAttachments(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// TODO: Implement get attachments logic
-	return sendAPIResponse(200, true, "Attachments retrieved successfully", []Attachment{}, ""), nil
-}
-
-// @Summary Delete attachment
-// @Description Delete an attachment
-// @Tags Attachments
-// @Accept json
-// @Produce json
-// @Param id path string true "Attachment ID"
-// @Security BearerAuth
-// @Success 200 {object} APIResponse "Attachment deleted"
-// @Failure 401 {object} APIResponse "Unauthorized"
-// @Failure 403 {object} APIResponse "Forbidden - not post owner or admin"
-// @Failure 404 {object} APIResponse "Attachment not found"
-// @Failure 500 {object} APIResponse "Server error"
-// @Router /attachments/{id} [delete]
-func (h *FeedHandler) handleDeleteAttachment(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// Only moderators and admins can delete attachments
-	if !isModerator(claims) {
-		return sendAPIResponse(403, false, "", nil, "Only moderators and admins can delete attachments"), nil
-	}
-
-	// TODO: Implement delete attachment logic
-	return sendAPIResponse(200, true, "Attachment deleted successfully", nil, ""), nil
 }
 
 // @Summary Repost a post

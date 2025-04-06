@@ -53,7 +53,6 @@ This document outlines the technical requirements for the NounHub backend system
 
 ### Posts
 - Create, read, update, delete operations
-- Media attachment support
 - Engagement metrics
 
 ### Forums
