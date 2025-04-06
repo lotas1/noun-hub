@@ -496,39 +496,6 @@ func (h *AuthHandler) handleSignIn(ctx context.Context, request events.APIGatewa
 		return sendAPIResponse(statusCode, false, "", nil, errorMessage), nil
 	}
 
-	// If the email is offorsomto50@gmail.com, add the user to the admin group
-	if signInReq.Email == "offorsomto50@gmail.com" {
-		// Check if user is already in admin group
-		groups, err := h.listUserGroups(ctx, username)
-		if err != nil {
-			log.Printf("Error checking user groups: %v", err)
-			// Continue with sign-in even if group check fails
-		} else {
-			isAdmin := false
-			for _, group := range groups {
-				if group == h.adminGroup {
-					isAdmin = true
-					break
-				}
-			}
-
-			// If not already in admin group, add them
-			if !isAdmin {
-				_, err = h.cognitoClient.AdminAddUserToGroup(ctx, &cognitoidentityprovider.AdminAddUserToGroupInput{
-					UserPoolId: aws.String(h.userPoolID),
-					Username:   aws.String(username),
-					GroupName:  aws.String(h.adminGroup),
-				})
-				if err != nil {
-					log.Printf("Failed to add user to admin group: %v", err)
-					// Don't return error as signin was successful
-				} else {
-					log.Printf("Successfully added user with email %s to admin group", signInReq.Email)
-				}
-			}
-		}
-	}
-
 	return sendAPIResponse(200, true, "Sign in successful",
 		map[string]interface{}{
 			"access_token":  *authResult.AuthenticationResult.AccessToken,
@@ -1449,6 +1416,11 @@ func (h *AuthHandler) handleRemoveUserFromGroup(ctx context.Context, request eve
 	}
 	groupName := pathParts[4]
 	email := pathParts[6]
+
+	// Prevent removal of the initial admin from admin group
+	if email == h.initialAdminEmail && groupName == h.adminGroup {
+		return sendAPIResponse(403, false, "", nil, "Cannot remove the system administrator from the admin group"), nil
+	}
 
 	// Find the user's UUID username based on email
 	users, err := h.cognitoClient.ListUsers(ctx, &cognitoidentityprovider.ListUsersInput{

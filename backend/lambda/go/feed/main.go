@@ -109,8 +109,10 @@ type Claims struct {
 func main() {
 	ctx := context.Background()
 
-	// Configure AWS SDK
-	cfg, err := config.LoadDefaultConfig(ctx)
+	// Configure AWS SDK - explicitly set the region to avoid endpoint resolution errors
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"), // Explicitly set to the same region as in Pulumi.dev.yaml
+	)
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
 	}
