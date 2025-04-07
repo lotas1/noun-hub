@@ -7,7 +7,6 @@ import * as aws from "@pulumi/aws";
 // Import the API documentation module
 import * as apiDocs from "./api-docs";
 import { createAuthResources } from "./modules/auth";
-import { createDatabaseResources } from "./modules/database";
 
 const config = new pulumi.Config();
 const stack = pulumi.getStack();
@@ -36,8 +35,121 @@ const usEast1Provider = new aws.Provider("us-east-1-provider", {
 // Auth resources
 const auth = createAuthResources(stack, commonTags);
 
-// Database resources
-const database = createDatabaseResources(stack, commonTags);
+// Remove the call to createDatabaseResources
+// const database = createDatabaseResources(stack, commonTags);
+
+// Insert database resource creation logic here
+// Create DynamoDB User Table
+const userTable = new aws.dynamodb.Table("user-table", {
+    name: `nounhub-user-table-${stack}`,
+    attributes: [
+        { name: "user_id", type: "S" },
+        { name: "email", type: "S" },
+    ],
+    hashKey: "user_id",
+    globalSecondaryIndexes: [
+        {
+            name: "EmailIndex",
+            hashKey: "email",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 5,
+    writeCapacity: 5,
+    tags: commonTags,
+});
+
+// Create DynamoDB Post Table
+const postTable = new aws.dynamodb.Table("post-table", {
+    name: `nounhub-post-table-${stack}`,
+    attributes: [
+        { name: "id", type: "S" },
+        { name: "author_id", type: "S" },
+        { name: "category_id", type: "S" },
+        { name: "created_at", type: "S" },
+    ],
+    hashKey: "id",
+    globalSecondaryIndexes: [
+        {
+            name: "AuthorIndex",
+            hashKey: "author_id",
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        },
+        {
+            name: "CategoryIndex",
+            hashKey: "category_id",
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        },
+        {
+            name: "TimeIndex",
+            hashKey: "id", // Not used, just a placeholder
+            rangeKey: "created_at",
+            projectionType: "ALL",
+            readCapacity: 5,
+            writeCapacity: 5,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 5,
+    writeCapacity: 5,
+    tags: commonTags,
+});
+
+// Create DynamoDB Category Table
+const categoryTable = new aws.dynamodb.Table("category-table", {
+    name: `nounhub-category-table-${stack}`,
+    attributes: [
+        { name: "id", type: "S" },
+        { name: "name", type: "S" },
+    ],
+    hashKey: "id",
+    globalSecondaryIndexes: [
+        {
+            name: "NameIndex",
+            hashKey: "name",
+            projectionType: "ALL",
+            readCapacity: 2,
+            writeCapacity: 2,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 2,
+    writeCapacity: 2,
+    tags: commonTags,
+});
+
+// Create DynamoDB Like Table
+const likeTable = new aws.dynamodb.Table("like-table", {
+    name: `nounhub-like-table-${stack}`,
+    attributes: [
+        { name: "user_id", type: "S" },
+        { name: "post_id", type: "S" },
+    ],
+    hashKey: "user_id",
+    rangeKey: "post_id",
+    globalSecondaryIndexes: [
+        {
+            name: "PostLikesIndex",
+            hashKey: "post_id",
+            projectionType: "ALL",
+            readCapacity: 2,
+            writeCapacity: 2,
+        }
+    ],
+    billingMode: "PROVISIONED",
+    readCapacity: 2,
+    writeCapacity: 2,
+    tags: commonTags,
+});
 
 //------------------------------------------------------------
 // 3) Export Required Values
@@ -51,18 +163,18 @@ export const moderatorGroupName = auth.moderatorGroupName;
 export const userPoolDomain = auth.userPoolDomain;
 export const userPoolIssuerUrl = auth.userPoolIssuerUrl;
 
-// Database exports
-export const userTableName = database.userTableName;
-export const postTableName = database.postTableName;
-export const categoryTableName = database.categoryTableName;
-export const likeTableName = database.likeTableName;
+// Database exports - update references
+export const userTableName = userTable.name;
+export const postTableName = postTable.name;
+export const categoryTableName = categoryTable.name;
+export const likeTableName = likeTable.name;
 
 // Lambda function environment variables
 const authLambdaEnvironment = {
     USER_POOL_ID: auth.userPoolId,
     CLIENT_ID: auth.userPoolClientId,
     GOOGLE_CLIENT_ID: config.require("googleClientId"),
-    USER_TABLE_NAME: database.userTableName,
+    USER_TABLE_NAME: userTable.name,
     ADMIN_GROUP: "admin",
     MODERATOR_GROUP: "moderator",
     INITIAL_ADMIN_EMAIL: "offorsomto50@gmail.com"
@@ -98,14 +210,14 @@ const dynamoPolicy = {
                 "dynamodb:Scan"
             ],
             Resource: [
-                database.userTableArn,
-                pulumi.interpolate`${database.userTableArn}/index/*`,
-                database.postTableArn,
-                pulumi.interpolate`${database.postTableArn}/index/*`,
-                database.categoryTableArn,
-                pulumi.interpolate`${database.categoryTableArn}/index/*`,
-                database.likeTableArn,
-                pulumi.interpolate`${database.likeTableArn}/index/*`
+                userTable.arn,
+                pulumi.interpolate`${userTable.arn}/index/*`,
+                postTable.arn,
+                pulumi.interpolate`${postTable.arn}/index/*`,
+                categoryTable.arn,
+                pulumi.interpolate`${categoryTable.arn}/index/*`,
+                likeTable.arn,
+                pulumi.interpolate`${likeTable.arn}/index/*`
             ]
         }
     ]
@@ -167,9 +279,9 @@ const authFunction = new aws.lambda.Function("auth-function", {
 // Environment variables for feed Lambda function
 const feedLambdaEnvironment = {
     USER_POOL_ID: auth.userPoolId,
-    POST_TABLE_NAME: database.postTableName,
-    CATEGORY_TABLE_NAME: database.categoryTableName,
-    LIKE_TABLE_NAME: database.likeTableName,
+    POST_TABLE_NAME: postTable.name,
+    CATEGORY_TABLE_NAME: categoryTable.name,
+    LIKE_TABLE_NAME: likeTable.name,
     ADMIN_GROUP: "admin",
     MODERATOR_GROUP: "moderator"
 };
@@ -460,8 +572,8 @@ const lambdaRolePolicy = new aws.iam.RolePolicy("auth-lambda-role-policy", {
                     "dynamodb:Scan"
                 ],
                 Resource: [
-                    database.userTableArn,
-                    pulumi.interpolate`${database.userTableArn}/index/*`
+                    userTable.arn,
+                    pulumi.interpolate`${userTable.arn}/index/*`
                 ]
             },
             {
@@ -507,12 +619,12 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     "dynamodb:BatchWriteItem"
                 ],
                 Resource: [
-                    database.postTableArn,
-                    pulumi.interpolate`${database.postTableArn}/index/*`,
-                    database.categoryTableArn,
-                    pulumi.interpolate`${database.categoryTableArn}/index/*`,
-                    database.likeTableArn,
-                    pulumi.interpolate`${database.likeTableArn}/index/*`
+                    postTable.arn,
+                    pulumi.interpolate`${postTable.arn}/index/*`,
+                    categoryTable.arn,
+                    pulumi.interpolate`${categoryTable.arn}/index/*`,
+                    likeTable.arn,
+                    pulumi.interpolate`${likeTable.arn}/index/*`
                 ]
             },
             {

@@ -109,10 +109,8 @@ type Claims struct {
 func main() {
 	ctx := context.Background()
 
-	// Configure AWS SDK - explicitly set the region to avoid endpoint resolution errors
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion("us-east-1"), // Explicitly set to the same region as in Pulumi.dev.yaml
-	)
+	// Configure AWS SDK - use default config without explicitly setting region
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
 	}
@@ -771,6 +769,7 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	}
 
 	// Check if category name already exists
+	log.Printf("Checking category existence: Table=%s, Index=%s, Name=%s", h.categoryTableName, "NameIndex", createCategoryReq.Name)
 	queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(h.categoryTableName),
 		IndexName:              aws.String("NameIndex"),
@@ -781,7 +780,7 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	})
 
 	if err != nil {
-		log.Printf("Error checking category existence: %v", err)
+		log.Printf("Detailed error checking category existence: %+v", err)
 		return sendAPIResponse(500, false, "", nil, "Error validating category name"), nil
 	}
 
