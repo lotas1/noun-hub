@@ -21,30 +21,31 @@ A central place to find school news and announcements quickly.
 ## Permissions
 - Only admins and moderators can create, edit, or delete posts.
 - Admins can edit or delete any post, but moderators can't edit or delete posts made by admins.
-- Everyone can like posts, but only moderators and admins can repost or quote.
+- Only authenticated users can like posts, but only moderators and admins can repost or quote.
 - Permissions are managed through user groups (moderators, admins) using "cognito:groups" claim in the access token for all RBAC checks
+- Unauthenticated users can view posts and categories, but cannot interact with them
 
 ## API Endpoints
 
 ### Posts
-- `GET /feed/posts` - Get all posts (supports pagination, filtering by category, and sorting)
-- `GET /feed/posts/{id}` - Get a specific post by ID
-- `POST /feed/posts` - Create a new post (moderators and admins only)
-- `PUT /feed/posts/{id}` - Update an existing post (moderators and admins only)
-- `DELETE /feed/posts/{id}` - Delete a post (moderators and admins only)
+- `GET /feed/posts` - Get all posts (supports pagination, filtering by category, and sorting) - **Public**
+- `GET /feed/posts/{id}` - Get a specific post by ID - **Public**
+- `POST /feed/posts` - Create a new post (moderators and admins only) - **Protected**
+- `PUT /feed/posts/{id}` - Update an existing post (moderators and admins only) - **Protected**
+- `DELETE /feed/posts/{id}` - Delete a post (moderators and admins only) - **Protected**
 
 ### Categories
-- `GET /feed/categories` - Get all categories
-- `POST /feed/categories` - Create a new category (moderators and admins only)
-- `PUT /feed/categories/{id}` - Update a category (moderators and admins only)
-- `DELETE /feed/categories/{id}` - Delete a category (moderators and admins only)
+- `GET /feed/categories` - Get all categories - **Public**
+- `POST /feed/categories` - Create a new category (moderators and admins only) - **Protected**
+- `PUT /feed/categories/{id}` - Update a category (moderators and admins only) - **Protected**
+- `DELETE /feed/categories/{id}` - Delete a category (moderators and admins only) - **Protected**
 
 ### Likes
-- `POST /feed/posts/{id}/like` - Like a post
-- `DELETE /feed/posts/{id}/like` - Unlike a post
+- `POST /feed/posts/{id}/like` - Like a post - **Protected**
+- `DELETE /feed/posts/{id}/like` - Unlike a post - **Protected**
 
 ### Repost
-- `POST /feed/posts/{id}/repost` - Repost a post (moderators and admins only)
+- `POST /feed/posts/{id}/repost` - Repost a post (moderators and admins only) - **Protected**
 
 ## Implementation Details
 

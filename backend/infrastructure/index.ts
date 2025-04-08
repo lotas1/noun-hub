@@ -408,12 +408,12 @@ const authRoutes = [
 
 // Create routes for all feed endpoints (all protected)
 const feedRoutes = [
-    { path: "/feed/posts", method: "GET", protected: true },
+    { path: "/feed/posts", method: "GET", protected: false },
     { path: "/feed/posts", method: "POST", protected: true },
-    { path: "/feed/posts/{id}", method: "GET", protected: true },
+    { path: "/feed/posts/{id}", method: "GET", protected: false },
     { path: "/feed/posts/{id}", method: "PUT", protected: true },
     { path: "/feed/posts/{id}", method: "DELETE", protected: true },
-    { path: "/feed/categories", method: "GET", protected: true },
+    { path: "/feed/categories", method: "GET", protected: false },
     { path: "/feed/categories", method: "POST", protected: true },
     { path: "/feed/categories/{id}", method: "PUT", protected: true },
     { path: "/feed/categories/{id}", method: "DELETE", protected: true },
@@ -442,13 +442,19 @@ authRoutes.forEach((route, index) => {
 
 // Create feed routes (all protected)
 feedRoutes.forEach((route, index) => {
-    new aws.apigatewayv2.Route(`feed-route-${index}`, {
+    const routeOptions: aws.apigatewayv2.RouteArgs = {
         apiId: api.id,
         routeKey: `${route.method} ${route.path}`,
-        target: pulumi.interpolate`integrations/${feedIntegration.id}`,
-        authorizationType: "JWT",
-        authorizerId: jwtAuthorizer.id
-    });
+        target: pulumi.interpolate`integrations/${feedIntegration.id}`
+    };
+    
+    // Add authorizer to protected routes
+    if (route.protected) {
+        routeOptions.authorizationType = "JWT";
+        routeOptions.authorizerId = jwtAuthorizer.id;
+    }
+    
+    new aws.apigatewayv2.Route(`feed-route-${index}`, routeOptions);
 });
 
 // Create stage
