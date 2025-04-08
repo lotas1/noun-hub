@@ -63,8 +63,8 @@ const userTable = new aws.dynamodb.Table("user-table", {
 });
 
 // Create DynamoDB Post Table
-const postTable = new aws.dynamodb.Table("post-table", {
-    name: `nounhub-post-table-${stack}`,
+const postTable = new aws.dynamodb.Table("feed-post-table", {
+    name: `nounhub-feed-post-table-${stack}`,
     attributes: [
         { name: "id", type: "S" },
         { name: "author_id", type: "S" },
@@ -105,8 +105,8 @@ const postTable = new aws.dynamodb.Table("post-table", {
 });
 
 // Create DynamoDB Category Table
-const categoryTable = new aws.dynamodb.Table("category-table", {
-    name: `nounhub-category-table-${stack}`,
+const categoryTable = new aws.dynamodb.Table("feed-category-table", {
+    name: `nounhub-feed-category-table-${stack}`,
     attributes: [
         { name: "id", type: "S" },
         { name: "name", type: "S" },
@@ -128,8 +128,8 @@ const categoryTable = new aws.dynamodb.Table("category-table", {
 });
 
 // Create DynamoDB Like Table
-const likeTable = new aws.dynamodb.Table("like-table", {
-    name: `nounhub-like-table-${stack}`,
+const likeTable = new aws.dynamodb.Table("feed-like-table", {
+    name: `nounhub-feed-like-table-${stack}`,
     attributes: [
         { name: "user_id", type: "S" },
         { name: "post_id", type: "S" },
@@ -165,9 +165,9 @@ export const userPoolIssuerUrl = auth.userPoolIssuerUrl;
 
 // Database exports - update references
 export const userTableName = userTable.name;
-export const postTableName = postTable.name;
-export const categoryTableName = categoryTable.name;
-export const likeTableName = likeTable.name;
+export const feedPostTableName = postTable.name;
+export const feedCategoryTableName = categoryTable.name;
+export const feedLikeTableName = likeTable.name;
 
 // Lambda function environment variables
 const authLambdaEnvironment = {
@@ -279,9 +279,9 @@ const authFunction = new aws.lambda.Function("auth-function", {
 // Environment variables for feed Lambda function
 const feedLambdaEnvironment = {
     USER_POOL_ID: auth.userPoolId,
-    POST_TABLE_NAME: postTable.name,
-    CATEGORY_TABLE_NAME: categoryTable.name,
-    LIKE_TABLE_NAME: likeTable.name,
+    FEED_POST_TABLE_NAME: postTable.name,
+    FEED_CATEGORY_TABLE_NAME: categoryTable.name,
+    FEED_LIKE_TABLE_NAME: likeTable.name,
     ADMIN_GROUP: "admin",
     MODERATOR_GROUP: "moderator"
 };

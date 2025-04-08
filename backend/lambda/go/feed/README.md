@@ -51,7 +51,7 @@ A central place to find school news and announcements quickly.
 
 ### Database Schema
 
-#### Posts Table
+#### Feed Post Table
 - `id` (String, Primary Key): Unique identifier for the post
 - `title` (String): Post title
 - `body` (String): Post content
@@ -61,16 +61,21 @@ A central place to find school news and announcements quickly.
 - `updated_at` (String): Timestamp when the post was last updated
 - `likes` (Number): Number of likes the post has received
 
-#### Categories Table
+#### Feed Category Table
 - `id` (String, Primary Key): Unique identifier for the category
 - `name` (String): Category name
 - `created_at` (String): Timestamp when the category was created
 - `updated_at` (String): Timestamp when the category was last updated
 
-#### Likes Table
+#### Feed Like Table
 - `user_id` (String, Partition Key): ID of the user who liked the post
 - `post_id` (String, Sort Key): ID of the liked post
 - `created_at` (String): Timestamp when the like was created
+
+### Table Naming Convention
+- Feature-specific tables are prefixed with the feature name (e.g., `feed_post_table`)
+- This provides clear ownership and prevents naming collisions with other features
+- Common resources like the user table remain unprefixed
 
 ### Authentication & Authorization
 - JWT tokens from AWS Cognito are used for authentication.

@@ -122,9 +122,9 @@ func main() {
 	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
 
 	// Get environment variables
-	postTableName := os.Getenv("POST_TABLE_NAME")
-	categoryTableName := os.Getenv("CATEGORY_TABLE_NAME")
-	likeTableName := os.Getenv("LIKE_TABLE_NAME")
+	postTableName := os.Getenv("FEED_POST_TABLE_NAME")
+	categoryTableName := os.Getenv("FEED_CATEGORY_TABLE_NAME")
+	likeTableName := os.Getenv("FEED_LIKE_TABLE_NAME")
 	userPoolID := os.Getenv("USER_POOL_ID")
 	adminGroup := os.Getenv("ADMIN_GROUP")
 	moderatorGroup := os.Getenv("MODERATOR_GROUP")
