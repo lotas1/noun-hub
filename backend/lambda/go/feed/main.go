@@ -796,7 +796,10 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(h.categoryTableName),
 		IndexName:              aws.String("NameIndex"),
-		KeyConditionExpression: aws.String("name = :name"),
+		KeyConditionExpression: aws.String("#n = :name"),
+		ExpressionAttributeNames: map[string]string{
+			"#n": "name",
+		},
 		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 			":name": &ddbTypes.AttributeValueMemberS{Value: createCategoryReq.Name},
 		},
@@ -903,7 +906,10 @@ func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.A
 		queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
 			TableName:              aws.String(h.categoryTableName),
 			IndexName:              aws.String("NameIndex"),
-			KeyConditionExpression: aws.String("name = :name"),
+			KeyConditionExpression: aws.String("#n = :name"),
+			ExpressionAttributeNames: map[string]string{
+				"#n": "name",
+			},
 			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 				":name": &ddbTypes.AttributeValueMemberS{Value: updateCategoryReq.Name},
 			},
