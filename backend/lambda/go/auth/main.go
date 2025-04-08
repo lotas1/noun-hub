@@ -1540,53 +1540,49 @@ func (h *AuthHandler) handleListUserGroups(ctx context.Context, request events.A
 }
 
 // Helper function to get groups from token claims
-func getGroupsFromToken(token string) ([]string, error) {
+func getGroupsFromToken(token string) ([]string, map[string]bool, error) {
 	// Parse the JWT token
 	parser := jwt.NewParser()
 	claims := jwt.MapClaims{}
 
 	_, _, err := parser.ParseUnverified(token, &claims)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse token: %v", err)
+		return nil, nil, fmt.Errorf("failed to parse token: %v", err)
 	}
 
 	// Extract groups from cognito:groups claim
 	groupsClaim, ok := claims["cognito:groups"]
 	if !ok {
-		return []string{}, nil
+		return []string{}, map[string]bool{}, nil
 	}
 
 	// Convert the groups claim to []string
 	groupsInterface, ok := groupsClaim.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid groups claim format")
+		return nil, nil, fmt.Errorf("invalid groups claim format")
 	}
 
 	groups := make([]string, len(groupsInterface))
+	groupMap := make(map[string]bool)
 	for i, g := range groupsInterface {
 		groups[i], ok = g.(string)
 		if !ok {
-			return nil, fmt.Errorf("invalid group format at index %d", i)
+			return nil, nil, fmt.Errorf("invalid group format at index %d", i)
 		}
+		groupMap[groups[i]] = true
 	}
 
-	return groups, nil
+	return groups, groupMap, nil
 }
 
 // Helper function to check if a user is in a group using token claims
 func isUserInGroupFromToken(token string, groupName string) (bool, error) {
-	groups, err := getGroupsFromToken(token)
+	_, groupMap, err := getGroupsFromToken(token)
 	if err != nil {
 		return false, err
 	}
 
-	for _, group := range groups {
-		if group == groupName {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	return groupMap[groupName], nil
 }
 
 // Helper function to list a user's groups

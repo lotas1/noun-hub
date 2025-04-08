@@ -101,8 +101,9 @@ type FeedHandler struct {
 
 // Claims represents JWT token claims
 type Claims struct {
-	Username string   `json:"username"`
-	Groups   []string `json:"cognito:groups"`
+	Username string          `json:"username"`
+	Groups   []string        `json:"cognito:groups"`
+	GroupMap map[string]bool `json:"-"` // Won't be marshaled/unmarshaled
 	jwt.RegisteredClaims
 }
 
@@ -165,6 +166,11 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 		parsedToken, _, err := parser.ParseUnverified(token, &Claims{})
 		if err == nil {
 			if c, ok := parsedToken.Claims.(*Claims); ok {
+				// Initialize the GroupMap from the Groups array for O(1) lookups
+				c.GroupMap = make(map[string]bool)
+				for _, group := range c.Groups {
+					c.GroupMap[group] = true
+				}
 				claims = c
 			}
 		}
@@ -259,13 +265,7 @@ func isAdmin(claims *Claims) bool {
 		return false
 	}
 
-	for _, group := range claims.Groups {
-		if group == "admin" {
-			return true
-		}
-	}
-
-	return false
+	return claims.GroupMap["admin"]
 }
 
 // Check if the user is a moderator
@@ -274,13 +274,7 @@ func isModerator(claims *Claims) bool {
 		return false
 	}
 
-	for _, group := range claims.Groups {
-		if group == "moderator" || group == "admin" {
-			return true
-		}
-	}
-
-	return false
+	return claims.GroupMap["moderator"] || claims.GroupMap["admin"]
 }
 
 // @Summary Get all posts
@@ -307,10 +301,9 @@ func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGate
 
 	// Prepare the query
 	var queryInput *dynamodb.QueryInput
-	var scanInput *dynamodb.ScanInput
 
 	if categoryID != "" {
-		// Query by category
+		// Query by category using CategoryIndex
 		queryInput = &dynamodb.QueryInput{
 			TableName:              aws.String(h.postTableName),
 			IndexName:              aws.String("CategoryIndex"),
@@ -322,64 +315,32 @@ func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGate
 			Limit:            aws.Int32(int32(limit)),
 		}
 	} else {
-		// Scan all posts
-		scanInput = &dynamodb.ScanInput{
-			TableName: aws.String(h.postTableName),
-			Limit:     aws.Int32(int32(limit)),
+		// Query all posts using TimeIndex instead of scanning
+		queryInput = &dynamodb.QueryInput{
+			TableName:        aws.String(h.postTableName),
+			IndexName:        aws.String("TimeIndex"),
+			ScanIndexForward: aws.Bool(false), // Descending order (newest first)
+			Limit:            aws.Int32(int32(limit)),
 		}
 	}
 
 	var posts []Post
 
-	if queryInput != nil {
-		// Execute the query
-		queryOutput, err := h.dynamodbClient.Query(ctx, queryInput)
-		if err != nil {
-			log.Printf("Error querying posts: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error retrieving posts"), nil
-		}
+	// Execute the query
+	queryOutput, err := h.dynamodbClient.Query(ctx, queryInput)
+	if err != nil {
+		log.Printf("Error querying posts: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error retrieving posts"), nil
+	}
 
-		// Unmarshal the results
-		err = attributevalue.UnmarshalListOfMaps(queryOutput.Items, &posts)
-		if err != nil {
-			log.Printf("Error unmarshaling posts: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error processing posts"), nil
-		}
-	} else {
-		// Execute the scan
-		scanOutput, err := h.dynamodbClient.Scan(ctx, scanInput)
-		if err != nil {
-			log.Printf("Error scanning posts: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error retrieving posts"), nil
-		}
-
-		// Unmarshal the results
-		err = attributevalue.UnmarshalListOfMaps(scanOutput.Items, &posts)
-		if err != nil {
-			log.Printf("Error unmarshaling posts: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error processing posts"), nil
-		}
-
-		// Sort by created_at (newest first) - since Scan doesn't guarantee order
-		if len(posts) > 0 {
-			// Sort in-memory - would be better to use a proper index in production
-			sortPostsByDate(posts)
-		}
+	// Unmarshal the results
+	err = attributevalue.UnmarshalListOfMaps(queryOutput.Items, &posts)
+	if err != nil {
+		log.Printf("Error unmarshaling posts: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error processing posts"), nil
 	}
 
 	return sendAPIResponse(200, true, "Posts retrieved successfully", posts, ""), nil
-}
-
-// Helper function to sort posts by date (newest first)
-func sortPostsByDate(posts []Post) {
-	// Sort by created_at in descending order
-	for i := 0; i < len(posts)-1; i++ {
-		for j := i + 1; j < len(posts); j++ {
-			if posts[i].CreatedAt.Before(posts[j].CreatedAt) {
-				posts[i], posts[j] = posts[j], posts[i]
-			}
-		}
-	}
 }
 
 // @Summary Get a post by ID
@@ -718,18 +679,30 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /categories [get]
 func (h *FeedHandler) handleGetCategories(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// Scan all categories
-	scanOutput, err := h.dynamodbClient.Scan(ctx, &dynamodb.ScanInput{
-		TableName: aws.String(h.categoryTableName),
-	})
+	// Use query operation with NameIndex instead of scanning all categories
+	// First we need to get all the partition keys in the GSI
+	// Since we want all categories and NameIndex has name as the hash key,
+	// we'll use a query with a begins_with operator to get all names
 
+	queryInput := &dynamodb.QueryInput{
+		TableName:              aws.String(h.categoryTableName),
+		IndexName:              aws.String("NameIndex"),
+		KeyConditionExpression: aws.String("name > :emptyString"),
+		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
+			":emptyString": &ddbTypes.AttributeValueMemberS{Value: ""},
+		},
+		// No need to set ScanIndexForward as the default (true) is what we want for alphabetical ordering
+	}
+
+	// Execute the query
+	queryOutput, err := h.dynamodbClient.Query(ctx, queryInput)
 	if err != nil {
-		log.Printf("Error scanning categories: %v", err)
+		log.Printf("Error querying categories: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error retrieving categories"), nil
 	}
 
 	var categories []Category
-	err = attributevalue.UnmarshalListOfMaps(scanOutput.Items, &categories)
+	err = attributevalue.UnmarshalListOfMaps(queryOutput.Items, &categories)
 	if err != nil {
 		log.Printf("Error unmarshaling categories: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error processing categories"), nil
