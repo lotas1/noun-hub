@@ -30,12 +30,6 @@ This philosophy guides every aspect of NounHub's development, creating a platfor
 - Aspiring applicants exploring university programs and community
 - Alumni maintaining connections to the university
 
-## User Metrics & Scale
-
-- Monthly Active Users (MAU): 20,000
-- Daily Active Users (DAU): 3,000
-- Forum Interactions: 45,000/month
-- Data Volume: 225 MB/month, 3.6 million reads/month
 
 ## Core Features
 ### Authentication & Authorization

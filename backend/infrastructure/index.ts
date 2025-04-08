@@ -52,13 +52,9 @@ const userTable = new aws.dynamodb.Table("user-table", {
             name: "EmailIndex",
             hashKey: "email",
             projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
         }
     ],
-    billingMode: "PROVISIONED",
-    readCapacity: 5,
-    writeCapacity: 5,
+    billingMode: "PAY_PER_REQUEST",
     tags: commonTags,
 });
 
@@ -78,29 +74,21 @@ const postTable = new aws.dynamodb.Table("feed-post-table", {
             hashKey: "author_id",
             rangeKey: "created_at",
             projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
         },
         {
             name: "CategoryIndex",
             hashKey: "category_id",
             rangeKey: "created_at",
             projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
         },
         {
             name: "TimeIndex",
             hashKey: "id", // Not used, just a placeholder
             rangeKey: "created_at",
             projectionType: "ALL",
-            readCapacity: 5,
-            writeCapacity: 5,
         }
     ],
-    billingMode: "PROVISIONED",
-    readCapacity: 5,
-    writeCapacity: 5,
+    billingMode: "PAY_PER_REQUEST",
     tags: commonTags,
 });
 
@@ -117,13 +105,9 @@ const categoryTable = new aws.dynamodb.Table("feed-category-table", {
             name: "NameIndex",
             hashKey: "name",
             projectionType: "ALL",
-            readCapacity: 2,
-            writeCapacity: 2,
         }
     ],
-    billingMode: "PROVISIONED",
-    readCapacity: 2,
-    writeCapacity: 2,
+    billingMode: "PAY_PER_REQUEST",
     tags: commonTags,
 });
 
@@ -141,13 +125,9 @@ const likeTable = new aws.dynamodb.Table("feed-like-table", {
             name: "PostLikesIndex",
             hashKey: "post_id",
             projectionType: "ALL",
-            readCapacity: 2,
-            writeCapacity: 2,
         }
     ],
-    billingMode: "PROVISIONED",
-    readCapacity: 2,
-    writeCapacity: 2,
+    billingMode: "PAY_PER_REQUEST",
     tags: commonTags,
 });
 
