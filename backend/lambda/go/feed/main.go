@@ -1322,12 +1322,14 @@ func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGa
 		CollectionType: "ALL", // Set the collection type for the GSI
 	}
 
-	// For simple reposts, use the original post's content (like Twitter retweet)
+	// Handle content based on repost type
 	if repostReq.RepostType == "repost" {
-		repost.Title = originalPost.Title
-		repost.Body = originalPost.Body
+		// For pure reposts, leave title and body empty
+		// This is true Twitter-style where we only store a reference to the original
+		repost.Title = ""
+		repost.Body = ""
 	} else {
-		// For quote reposts, use the provided content (like Twitter quote tweet)
+		// For quote reposts, use the provided content (this is like Twitter's quote tweet)
 		repost.Title = repostReq.Title
 		repost.Body = repostReq.Body
 	}
