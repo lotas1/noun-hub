@@ -47,15 +47,39 @@ definitions:
         type: string
       category_id:
         type: string
+      collection_type:
+        description: For GlobalCollectionIndex
+        type: string
       created_at:
         type: string
       id:
         type: string
-      likes:
+      is_repost:
         type: integer
+      original_id:
+        type: string
+      repost_type:
+        description: '"repost" or "quote"'
+        type: string
       title:
         type: string
       updated_at:
+        type: string
+    type: object
+  main.RepostRequest:
+    properties:
+      body:
+        example: This is really important for all students!
+        type: string
+      category_id:
+        example: cat-123
+        type: string
+      repost_type:
+        description: '"repost" or "quote"'
+        example: repost
+        type: string
+      title:
+        example: My thoughts on this announcement
         type: string
     type: object
   main.UpdatePostRequest:
@@ -254,6 +278,14 @@ paths:
         in: query
         name: author_id
         type: string
+      - description: Limit the number of results (default 20)
+        in: query
+        name: limit
+        type: integer
+      - description: Pagination token for the next page
+        in: query
+        name: next_token
+        type: string
       produces:
       - application/json
       responses:
@@ -440,98 +472,23 @@ paths:
       summary: Update a post
       tags:
       - Posts
-  /posts/{id}/like:
-    delete:
-      consumes:
-      - application/json
-      description: Remove a like from a post
-      parameters:
-      - description: Post ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Post unliked
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "400":
-          description: Invalid input
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "404":
-          description: Post not found or not liked
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Unlike a post
-      tags:
-      - Likes
-    post:
-      consumes:
-      - application/json
-      description: Add a like to a post
-      parameters:
-      - description: Post ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Post liked
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "400":
-          description: Invalid input
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "404":
-          description: Post not found
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "409":
-          description: Post already liked
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/main.APIResponse'
-      security:
-      - BearerAuth: []
-      summary: Like a post
-      tags:
-      - Likes
   /posts/{id}/repost:
     post:
       consumes:
       - application/json
-      description: Create a new post that references an existing post (repost)
+      description: Create a new post that references an existing post (repost or quote)
       parameters:
       - description: Post ID to repost
         in: path
         name: id
         required: true
         type: string
+      - description: Repost information
+        in: body
+        name: repost
+        required: true
+        schema:
+          $ref: '#/definitions/main.RepostRequest'
       produces:
       - application/json
       responses:
@@ -544,6 +501,10 @@ paths:
                 data:
                   $ref: '#/definitions/main.Post'
               type: object
+        "400":
+          description: Invalid input
+          schema:
+            $ref: '#/definitions/main.APIResponse'
         "401":
           description: Unauthorized
           schema:

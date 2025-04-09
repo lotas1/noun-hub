@@ -66,6 +66,9 @@ const postTable = new aws.dynamodb.Table("feed-post-table", {
         { name: "author_id", type: "S" },
         { name: "category_id", type: "S" },
         { name: "created_at", type: "S" },
+        { name: "original_id", type: "S" },
+        { name: "is_repost", type: "N" },
+        { name: "collection_type", type: "S" },
     ],
     hashKey: "id",
     globalSecondaryIndexes: [
@@ -83,7 +86,19 @@ const postTable = new aws.dynamodb.Table("feed-post-table", {
         },
         {
             name: "TimeIndex",
-            hashKey: "id", // Not used, just a placeholder
+            hashKey: "id",
+            rangeKey: "created_at",
+            projectionType: "ALL",
+        },
+        {
+            name: "RepostIndex",
+            hashKey: "original_id",
+            rangeKey: "is_repost",
+            projectionType: "ALL",
+        },
+        {
+            name: "GlobalCollectionIndex",
+            hashKey: "collection_type",
             rangeKey: "created_at",
             projectionType: "ALL",
         }
@@ -97,13 +112,13 @@ const categoryTable = new aws.dynamodb.Table("feed-category-table", {
     name: `nounhub-feed-category-table-${stack}`,
     attributes: [
         { name: "id", type: "S" },
-        { name: "name", type: "S" },
+        { name: "category_name", type: "S" },
     ],
     hashKey: "id",
     globalSecondaryIndexes: [
         {
             name: "NameIndex",
-            hashKey: "name",
+            hashKey: "category_name",
             projectionType: "ALL",
         }
     ],
@@ -111,25 +126,6 @@ const categoryTable = new aws.dynamodb.Table("feed-category-table", {
     tags: commonTags,
 });
 
-// Create DynamoDB Like Table
-const likeTable = new aws.dynamodb.Table("feed-like-table", {
-    name: `nounhub-feed-like-table-${stack}`,
-    attributes: [
-        { name: "user_id", type: "S" },
-        { name: "post_id", type: "S" },
-    ],
-    hashKey: "user_id",
-    rangeKey: "post_id",
-    globalSecondaryIndexes: [
-        {
-            name: "PostLikesIndex",
-            hashKey: "post_id",
-            projectionType: "ALL",
-        }
-    ],
-    billingMode: "PAY_PER_REQUEST",
-    tags: commonTags,
-});
 
 //------------------------------------------------------------
 // 3) Export Required Values
@@ -147,7 +143,6 @@ export const userPoolIssuerUrl = auth.userPoolIssuerUrl;
 export const userTableName = userTable.name;
 export const feedPostTableName = postTable.name;
 export const feedCategoryTableName = categoryTable.name;
-export const feedLikeTableName = likeTable.name;
 
 // Lambda function environment variables
 const authLambdaEnvironment = {
@@ -195,9 +190,7 @@ const dynamoPolicy = {
                 postTable.arn,
                 pulumi.interpolate`${postTable.arn}/index/*`,
                 categoryTable.arn,
-                pulumi.interpolate`${categoryTable.arn}/index/*`,
-                likeTable.arn,
-                pulumi.interpolate`${likeTable.arn}/index/*`
+                pulumi.interpolate`${categoryTable.arn}/index/*`
             ]
         }
     ]
@@ -261,7 +254,6 @@ const feedLambdaEnvironment = {
     USER_POOL_ID: auth.userPoolId,
     FEED_POST_TABLE_NAME: postTable.name,
     FEED_CATEGORY_TABLE_NAME: categoryTable.name,
-    FEED_LIKE_TABLE_NAME: likeTable.name,
     ADMIN_GROUP: "admin",
     MODERATOR_GROUP: "moderator"
 };
@@ -397,8 +389,6 @@ const feedRoutes = [
     { path: "/feed/categories", method: "POST", protected: true },
     { path: "/feed/categories/{id}", method: "PUT", protected: true },
     { path: "/feed/categories/{id}", method: "DELETE", protected: true },
-    { path: "/feed/posts/{id}/like", method: "POST", protected: true },
-    { path: "/feed/posts/{id}/like", method: "DELETE", protected: true },
     { path: "/feed/posts/{id}/repost", method: "POST", protected: true },
     { path: "/feed/posts/{id}/comments/{commentId}", method: "DELETE", protected: true }
 ];
@@ -608,9 +598,7 @@ const feedLambdaRolePolicy = new aws.iam.RolePolicy("feed-lambda-role-policy", {
                     postTable.arn,
                     pulumi.interpolate`${postTable.arn}/index/*`,
                     categoryTable.arn,
-                    pulumi.interpolate`${categoryTable.arn}/index/*`,
-                    likeTable.arn,
-                    pulumi.interpolate`${likeTable.arn}/index/*`
+                    pulumi.interpolate`${categoryTable.arn}/index/*`
                 ]
             },
             {

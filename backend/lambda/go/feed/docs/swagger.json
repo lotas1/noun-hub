@@ -300,6 +300,18 @@
                         "description": "Filter by author ID",
                         "name": "author_id",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit the number of results (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination token for the next page",
+                        "name": "next_token",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -601,132 +613,6 @@
                 }
             }
         },
-        "/posts/{id}/like": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Add a like to a post",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Likes"
-                ],
-                "summary": "Like a post",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Post ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Post liked",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid input",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Post not found",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Post already liked",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Remove a like from a post",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Likes"
-                ],
-                "summary": "Unlike a post",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Post ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Post unliked",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid input",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Post not found or not liked",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/main.APIResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/posts/{id}/repost": {
             "post": {
                 "security": [
@@ -734,7 +620,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Create a new post that references an existing post (repost)",
+                "description": "Create a new post that references an existing post (repost or quote)",
                 "consumes": [
                     "application/json"
                 ],
@@ -752,6 +638,15 @@
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Repost information",
+                        "name": "repost",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.RepostRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -771,6 +666,12 @@
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "schema": {
+                            "$ref": "#/definitions/main.APIResponse"
                         }
                     },
                     "401": {
@@ -872,20 +773,53 @@
                 "category_id": {
                     "type": "string"
                 },
+                "collection_type": {
+                    "description": "For GlobalCollectionIndex",
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
-                "likes": {
+                "is_repost": {
                     "type": "integer"
+                },
+                "original_id": {
+                    "type": "string"
+                },
+                "repost_type": {
+                    "description": "\"repost\" or \"quote\"",
+                    "type": "string"
                 },
                 "title": {
                     "type": "string"
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "main.RepostRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string",
+                    "example": "This is really important for all students!"
+                },
+                "category_id": {
+                    "type": "string",
+                    "example": "cat-123"
+                },
+                "repost_type": {
+                    "description": "\"repost\" or \"quote\"",
+                    "type": "string",
+                    "example": "repost"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "My thoughts on this announcement"
                 }
             }
         },

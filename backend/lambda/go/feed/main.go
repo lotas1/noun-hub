@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -43,29 +44,25 @@ type APIResponse struct {
 
 // Post represents a feed post
 type Post struct {
-	ID         string    `json:"id" dynamodbav:"id"`
-	Title      string    `json:"title" dynamodbav:"title"`
-	Body       string    `json:"body" dynamodbav:"body"`
-	AuthorID   string    `json:"author_id" dynamodbav:"author_id"`
-	CategoryID string    `json:"category_id" dynamodbav:"category_id"`
-	CreatedAt  time.Time `json:"created_at" dynamodbav:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at" dynamodbav:"updated_at"`
-	Likes      int       `json:"likes" dynamodbav:"likes"`
+	ID             string    `json:"id" dynamodbav:"id"`
+	Title          string    `json:"title" dynamodbav:"title"`
+	Body           string    `json:"body" dynamodbav:"body"`
+	AuthorID       string    `json:"author_id" dynamodbav:"author_id"`
+	CategoryID     string    `json:"category_id" dynamodbav:"category_id"`
+	CreatedAt      time.Time `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" dynamodbav:"updated_at"`
+	IsRepost       int       `json:"is_repost" dynamodbav:"is_repost"`
+	OriginalID     string    `json:"original_id,omitempty" dynamodbav:"original_id,omitempty"`
+	RepostType     string    `json:"repost_type,omitempty" dynamodbav:"repost_type,omitempty"` // "repost" or "quote"
+	CollectionType string    `json:"collection_type,omitempty" dynamodbav:"collection_type"`   // For GlobalCollectionIndex
 }
 
 // Category represents a post category
 type Category struct {
-	ID        string    `json:"id" dynamodbav:"id"`
-	Name      string    `json:"name" dynamodbav:"name"`
-	CreatedAt time.Time `json:"created_at" dynamodbav:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" dynamodbav:"updated_at"`
-}
-
-// Like represents a user's like on a post
-type Like struct {
-	UserID    string    `json:"user_id" dynamodbav:"user_id"`
-	PostID    string    `json:"post_id" dynamodbav:"post_id"`
-	CreatedAt time.Time `json:"created_at" dynamodbav:"created_at"`
+	ID           string    `json:"id" dynamodbav:"id"`
+	CategoryName string    `json:"name" dynamodbav:"category_name"`
+	CreatedAt    time.Time `json:"created_at" dynamodbav:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" dynamodbav:"updated_at"`
 }
 
 // CreatePostRequest represents the request payload for creating a post
@@ -87,13 +84,20 @@ type CreateCategoryRequest struct {
 	Name string `json:"name" example:"TMA"`
 }
 
+// RepostRequest represents the request payload for reposting a post
+type RepostRequest struct {
+	Title      string `json:"title,omitempty" example:"My thoughts on this announcement"`
+	Body       string `json:"body,omitempty" example:"This is really important for all students!"`
+	CategoryID string `json:"category_id,omitempty" example:"cat-123"`
+	RepostType string `json:"repost_type" example:"repost"` // "repost" or "quote"
+}
+
 // FeedHandler handles feed operations
 type FeedHandler struct {
 	dynamodbClient    *dynamodb.Client
 	cognitoClient     *cognitoidentityprovider.Client
 	postTableName     string
 	categoryTableName string
-	likeTableName     string
 	userPoolID        string
 	adminGroup        string
 	moderatorGroup    string
@@ -105,6 +109,12 @@ type Claims struct {
 	Groups   []string        `json:"cognito:groups"`
 	GroupMap map[string]bool `json:"-"` // Won't be marshaled/unmarshaled
 	jwt.RegisteredClaims
+}
+
+// RepostResponse represents a Post along with its original post if it's a repost
+type RepostResponse struct {
+	Post         Post  `json:"post"`
+	OriginalPost *Post `json:"original_post,omitempty"`
 }
 
 func main() {
@@ -125,7 +135,6 @@ func main() {
 	// Get environment variables
 	postTableName := os.Getenv("FEED_POST_TABLE_NAME")
 	categoryTableName := os.Getenv("FEED_CATEGORY_TABLE_NAME")
-	likeTableName := os.Getenv("FEED_LIKE_TABLE_NAME")
 	userPoolID := os.Getenv("USER_POOL_ID")
 	adminGroup := os.Getenv("ADMIN_GROUP")
 	moderatorGroup := os.Getenv("MODERATOR_GROUP")
@@ -136,7 +145,6 @@ func main() {
 		cognitoClient:     cognitoClient,
 		postTableName:     postTableName,
 		categoryTableName: categoryTableName,
-		likeTableName:     likeTableName,
 		userPoolID:        userPoolID,
 		adminGroup:        adminGroup,
 		moderatorGroup:    moderatorGroup,
@@ -199,12 +207,6 @@ func (h *FeedHandler) handleRequest(ctx context.Context, request events.APIGatew
 		return h.handleUpdateCategory(ctx, request, claims)
 	case method == "DELETE" && strings.HasPrefix(path, "/categories/"):
 		return h.handleDeleteCategory(ctx, request, claims)
-
-	// Like endpoints
-	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/like"):
-		return h.handleLikePost(ctx, request, claims)
-	case method == "DELETE" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/like"):
-		return h.handleUnlikePost(ctx, request, claims)
 
 	// Repost endpoints
 	case method == "POST" && strings.HasPrefix(path, "/posts/") && strings.HasSuffix(path, "/repost"):
@@ -284,24 +286,45 @@ func isModerator(claims *Claims) bool {
 // @Produce json
 // @Param category_id query string false "Filter by category ID"
 // @Param author_id query string false "Filter by author ID"
+// @Param limit query int false "Limit the number of results (default 20)"
+// @Param next_token query string false "Pagination token for the next page"
 // @Success 200 {object} APIResponse{data=[]Post} "Successful operation"
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /posts [get]
 func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Get query parameters
 	categoryID := request.QueryStringParameters["category"]
+	authorID := request.QueryStringParameters["author"]
+	nextToken := request.QueryStringParameters["next_token"]
 	limit := 20 // Default limit
 
 	// Parse limit if provided
 	if limitStr, ok := request.QueryStringParameters["limit"]; ok {
-		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
-			limit = 20 // Reset to default if parsing fails
+		if parsedLimit, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || parsedLimit <= 0 {
+			limit = 20 // Reset to default if parsing fails or if the limit is invalid
 		}
+	}
+
+	// If limit is too high, cap it at 100
+	if limit > 100 {
+		limit = 100
 	}
 
 	// Prepare the query
 	var queryInput *dynamodb.QueryInput
+	var exclusiveStartKey map[string]ddbTypes.AttributeValue
 
+	// Parse the pagination token if provided
+	if nextToken != "" {
+		var tokenErr error
+		exclusiveStartKey, tokenErr = parseNextToken(nextToken)
+		if tokenErr != nil {
+			log.Printf("Error parsing pagination token: %v", tokenErr)
+			return sendAPIResponse(400, false, "", nil, "Invalid pagination token"), nil
+		}
+	}
+
+	// If filtering by category
 	if categoryID != "" {
 		// Query by category using CategoryIndex
 		queryInput = &dynamodb.QueryInput{
@@ -311,20 +334,37 @@ func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGate
 			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 				":catId": &ddbTypes.AttributeValueMemberS{Value: categoryID},
 			},
-			ScanIndexForward: aws.Bool(false), // Descending order (newest first)
-			Limit:            aws.Int32(int32(limit)),
+			ScanIndexForward:  aws.Bool(false), // Descending order (newest first)
+			Limit:             aws.Int32(int32(limit)),
+			ExclusiveStartKey: exclusiveStartKey,
+		}
+	} else if authorID != "" {
+		// Query by author using AuthorIndex
+		queryInput = &dynamodb.QueryInput{
+			TableName:              aws.String(h.postTableName),
+			IndexName:              aws.String("AuthorIndex"),
+			KeyConditionExpression: aws.String("author_id = :authorId"),
+			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
+				":authorId": &ddbTypes.AttributeValueMemberS{Value: authorID},
+			},
+			ScanIndexForward:  aws.Bool(false), // Descending order (newest first)
+			Limit:             aws.Int32(int32(limit)),
+			ExclusiveStartKey: exclusiveStartKey,
 		}
 	} else {
-		// Query all posts using TimeIndex instead of scanning
+		// Use GlobalCollectionIndex to get all posts with efficient pagination
 		queryInput = &dynamodb.QueryInput{
-			TableName:        aws.String(h.postTableName),
-			IndexName:        aws.String("TimeIndex"),
-			ScanIndexForward: aws.Bool(false), // Descending order (newest first)
-			Limit:            aws.Int32(int32(limit)),
+			TableName:              aws.String(h.postTableName),
+			IndexName:              aws.String("GlobalCollectionIndex"),
+			KeyConditionExpression: aws.String("collection_type = :collection"),
+			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
+				":collection": &ddbTypes.AttributeValueMemberS{Value: "ALL"},
+			},
+			ScanIndexForward:  aws.Bool(false), // Descending order (newest first)
+			Limit:             aws.Int32(int32(limit)),
+			ExclusiveStartKey: exclusiveStartKey,
 		}
 	}
-
-	var posts []Post
 
 	// Execute the query
 	queryOutput, err := h.dynamodbClient.Query(ctx, queryInput)
@@ -334,13 +374,121 @@ func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGate
 	}
 
 	// Unmarshal the results
+	var posts []Post
 	err = attributevalue.UnmarshalListOfMaps(queryOutput.Items, &posts)
 	if err != nil {
 		log.Printf("Error unmarshaling posts: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error processing posts"), nil
 	}
 
-	return sendAPIResponse(200, true, "Posts retrieved successfully", posts, ""), nil
+	// Process reposts to include original post information
+	var postsResponse []interface{}
+	originalPostIds := make(map[string]bool)
+
+	// First, collect all original post IDs
+	for _, post := range posts {
+		if post.IsRepost > 0 && post.OriginalID != "" {
+			originalPostIds[post.OriginalID] = true
+		}
+	}
+
+	// If there are reposts, fetch all the original posts in one batch
+	originalPosts := make(map[string]Post)
+	if len(originalPostIds) > 0 {
+		keys := make([]map[string]ddbTypes.AttributeValue, 0, len(originalPostIds))
+		for id := range originalPostIds {
+			keys = append(keys, map[string]ddbTypes.AttributeValue{
+				"id": &ddbTypes.AttributeValueMemberS{Value: id},
+			})
+		}
+
+		// Batch get the original posts
+		batchGetOutput, err := h.dynamodbClient.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{
+			RequestItems: map[string]ddbTypes.KeysAndAttributes{
+				h.postTableName: {
+					Keys: keys,
+				},
+			},
+		})
+
+		if err == nil && len(batchGetOutput.Responses[h.postTableName]) > 0 {
+			var fetchedOriginalPosts []Post
+			err = attributevalue.UnmarshalListOfMaps(batchGetOutput.Responses[h.postTableName], &fetchedOriginalPosts)
+			if err == nil {
+				for _, op := range fetchedOriginalPosts {
+					originalPosts[op.ID] = op
+				}
+			}
+		}
+	}
+
+	// Now create the response with original post information where applicable
+	for _, post := range posts {
+		if post.IsRepost > 0 && post.OriginalID != "" {
+			// If we have the original post, include it
+			originalPost, exists := originalPosts[post.OriginalID]
+			if exists {
+				postsResponse = append(postsResponse, RepostResponse{
+					Post:         post,
+					OriginalPost: &originalPost,
+				})
+			} else {
+				// If we don't have the original post, still include the repost
+				postsResponse = append(postsResponse, RepostResponse{
+					Post: post,
+				})
+			}
+		} else {
+			// For regular posts, just include the post
+			postsResponse = append(postsResponse, post)
+		}
+	}
+
+	// Create the response
+	response := map[string]interface{}{
+		"posts": postsResponse,
+	}
+
+	// Add pagination token if there are more results
+	if len(queryOutput.LastEvaluatedKey) > 0 {
+		nextToken, err := createNextToken(queryOutput.LastEvaluatedKey)
+		if err == nil {
+			response["next_token"] = nextToken
+		}
+	}
+
+	return sendAPIResponse(200, true, "Posts retrieved successfully", response, ""), nil
+}
+
+// Helper function to create a pagination token from LastEvaluatedKey
+func createNextToken(lastEvaluatedKey map[string]ddbTypes.AttributeValue) (string, error) {
+	// Convert the LastEvaluatedKey to JSON and base64 encode it
+	jsonBytes, err := json.Marshal(lastEvaluatedKey)
+	if err != nil {
+		return "", err
+	}
+
+	// Base64 encode the JSON
+	token := base64.StdEncoding.EncodeToString(jsonBytes)
+	return token, nil
+}
+
+// Helper function to parse a pagination token back to ExclusiveStartKey
+func parseNextToken(nextToken string) (map[string]ddbTypes.AttributeValue, error) {
+	// Base64 decode the token
+	jsonBytes, err := base64.StdEncoding.DecodeString(nextToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the JSON to a map
+	var exclusiveStartKey map[string]ddbTypes.AttributeValue
+	err = json.Unmarshal(jsonBytes, &exclusiveStartKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return exclusiveStartKey, nil
 }
 
 // @Summary Get a post by ID
@@ -385,6 +533,36 @@ func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatew
 	if err != nil {
 		log.Printf("Error unmarshaling post: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error processing post"), nil
+	}
+
+	// If this is a repost, get the original post details
+	if post.IsRepost > 0 && post.OriginalID != "" {
+		originalPostOutput, err := h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
+			TableName: aws.String(h.postTableName),
+			Key: map[string]ddbTypes.AttributeValue{
+				"id": &ddbTypes.AttributeValueMemberS{Value: post.OriginalID},
+			},
+		})
+
+		// Create a response structure with both the repost and original post
+		repostResponse := RepostResponse{
+			Post: post,
+		}
+
+		// Only include the original post if it exists and can be unmarshaled
+		if err == nil && originalPostOutput.Item != nil && len(originalPostOutput.Item) > 0 {
+			var originalPost Post
+			err = attributevalue.UnmarshalMap(originalPostOutput.Item, &originalPost)
+			if err == nil {
+				repostResponse.OriginalPost = &originalPost
+			} else {
+				log.Printf("Error unmarshaling original post: %v", err)
+			}
+		} else if err != nil {
+			log.Printf("Error retrieving original post: %v", err)
+		}
+
+		return sendAPIResponse(200, true, "Post retrieved successfully", repostResponse, ""), nil
 	}
 
 	return sendAPIResponse(200, true, "Post retrieved successfully", post, ""), nil
@@ -433,14 +611,17 @@ func (h *FeedHandler) handleCreatePost(ctx context.Context, request events.APIGa
 	// Create a new post
 	now := time.Now()
 	post := Post{
-		ID:         uuid.New().String(),
-		Title:      createPostReq.Title,
-		Body:       createPostReq.Body,
-		AuthorID:   claims.Username,
-		CategoryID: createPostReq.CategoryID,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-		Likes:      0,
+		ID:             uuid.New().String(),
+		Title:          createPostReq.Title,
+		Body:           createPostReq.Body,
+		AuthorID:       claims.Username,
+		CategoryID:     createPostReq.CategoryID,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		IsRepost:       0,
+		OriginalID:     "",
+		RepostType:     "",
+		CollectionType: "ALL", // Set the collection type for the GSI
 	}
 
 	// Marshal the post
@@ -733,7 +914,7 @@ func (h *FeedHandler) handleGetCategories(ctx context.Context, _ events.APIGatew
 	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(h.categoryTableName),
 		IndexName:              aws.String("NameIndex"),
-		KeyConditionExpression: aws.String("name > :emptyString"),
+		KeyConditionExpression: aws.String("category_name > :emptyString"),
 		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 			":emptyString": &ddbTypes.AttributeValueMemberS{Value: ""},
 		},
@@ -796,10 +977,7 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(h.categoryTableName),
 		IndexName:              aws.String("NameIndex"),
-		KeyConditionExpression: aws.String("#n = :name"),
-		ExpressionAttributeNames: map[string]string{
-			"#n": "name",
-		},
+		KeyConditionExpression: aws.String("category_name = :name"),
 		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 			":name": &ddbTypes.AttributeValueMemberS{Value: createCategoryReq.Name},
 		},
@@ -817,10 +995,10 @@ func (h *FeedHandler) handleCreateCategory(ctx context.Context, request events.A
 	// Create a new category
 	now := time.Now()
 	category := Category{
-		ID:        uuid.New().String(),
-		Name:      createCategoryReq.Name,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:           uuid.New().String(),
+		CategoryName: createCategoryReq.Name,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	// Marshal the category
@@ -906,10 +1084,7 @@ func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.A
 		queryOutput, err := h.dynamodbClient.Query(ctx, &dynamodb.QueryInput{
 			TableName:              aws.String(h.categoryTableName),
 			IndexName:              aws.String("NameIndex"),
-			KeyConditionExpression: aws.String("#n = :name"),
-			ExpressionAttributeNames: map[string]string{
-				"#n": "name",
-			},
+			KeyConditionExpression: aws.String("category_name = :name"),
 			ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
 				":name": &ddbTypes.AttributeValueMemberS{Value: updateCategoryReq.Name},
 			},
@@ -938,7 +1113,7 @@ func (h *FeedHandler) handleUpdateCategory(ctx context.Context, request events.A
 	}
 
 	// Update the category
-	category.Name = updateCategoryReq.Name
+	category.CategoryName = updateCategoryReq.Name
 	category.UpdatedAt = time.Now()
 
 	// Marshal the category
@@ -1042,269 +1217,139 @@ func (h *FeedHandler) handleDeleteCategory(ctx context.Context, request events.A
 	return sendAPIResponse(200, true, "Category deleted successfully", nil, ""), nil
 }
 
-// @Summary Like a post
-// @Description Add a like to a post
-// @Tags Likes
-// @Accept json
-// @Produce json
-// @Param id path string true "Post ID"
-// @Security BearerAuth
-// @Success 200 {object} APIResponse "Post liked"
-// @Failure 400 {object} APIResponse "Invalid input"
-// @Failure 401 {object} APIResponse "Unauthorized"
-// @Failure 404 {object} APIResponse "Post not found"
-// @Failure 409 {object} APIResponse "Post already liked"
-// @Failure 500 {object} APIResponse "Server error"
-// @Router /posts/{id}/like [post]
-func (h *FeedHandler) handleLikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// All authenticated users can like posts
-	if claims == nil {
-		return sendAPIResponse(401, false, "", nil, "Authentication required"), nil
-	}
-
-	// Extract post ID from path
-	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
-	if len(parts) < 4 {
-		return sendAPIResponse(400, false, "", nil, "Invalid path format"), nil
-	}
-
-	postID := parts[len(parts)-2] // Format: /feed/posts/{id}/like
-
-	// Check if the post exists
-	getItemOutput, err := h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(h.postTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-	})
-
-	if err != nil {
-		log.Printf("Error getting post: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error retrieving post"), nil
-	}
-
-	if getItemOutput.Item == nil {
-		return sendAPIResponse(404, false, "", nil, "Post not found"), nil
-	}
-
-	// Check if the user has already liked the post
-	getItemOutput, err = h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(h.likeTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"user_id": &ddbTypes.AttributeValueMemberS{Value: claims.Username},
-			"post_id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-	})
-
-	if err != nil {
-		log.Printf("Error checking like: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error checking like status"), nil
-	}
-
-	if getItemOutput.Item != nil {
-		return sendAPIResponse(400, false, "", nil, "You have already liked this post"), nil
-	}
-
-	// Create a new like
-	like := Like{
-		UserID:    claims.Username,
-		PostID:    postID,
-		CreatedAt: time.Now(),
-	}
-
-	// Marshal the like
-	item, err := attributevalue.MarshalMap(like)
-	if err != nil {
-		log.Printf("Error marshaling like: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error creating like"), nil
-	}
-
-	// Save to DynamoDB
-	_, err = h.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: aws.String(h.likeTableName),
-		Item:      item,
-	})
-
-	if err != nil {
-		log.Printf("Error saving like: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error saving like"), nil
-	}
-
-	// Update the post's like count
-	updateOutput, err := h.dynamodbClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: aws.String(h.postTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-		UpdateExpression: aws.String("SET likes = likes + :val"),
-		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
-			":val": &ddbTypes.AttributeValueMemberN{Value: "1"},
-		},
-		ReturnValues: ddbTypes.ReturnValueAllNew,
-	})
-
-	if err != nil {
-		log.Printf("Error updating post like count: %v", err)
-		// Continue even if the like count update fails
-	}
-
-	var updatedPost Post
-	if updateOutput.Attributes != nil {
-		err = attributevalue.UnmarshalMap(updateOutput.Attributes, &updatedPost)
-		if err != nil {
-			log.Printf("Error unmarshaling updated post: %v", err)
-		}
-	}
-
-	return sendAPIResponse(200, true, "Post liked successfully", updatedPost, ""), nil
-}
-
-// @Summary Unlike a post
-// @Description Remove a like from a post
-// @Tags Likes
-// @Accept json
-// @Produce json
-// @Param id path string true "Post ID"
-// @Security BearerAuth
-// @Success 200 {object} APIResponse "Post unliked"
-// @Failure 400 {object} APIResponse "Invalid input"
-// @Failure 401 {object} APIResponse "Unauthorized"
-// @Failure 404 {object} APIResponse "Post not found or not liked"
-// @Failure 500 {object} APIResponse "Server error"
-// @Router /posts/{id}/like [delete]
-func (h *FeedHandler) handleUnlikePost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// All authenticated users can unlike posts they've liked
-	if claims == nil {
-		return sendAPIResponse(401, false, "", nil, "Authentication required"), nil
-	}
-
-	// Extract post ID from path
-	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
-	if len(parts) < 4 {
-		return sendAPIResponse(400, false, "", nil, "Invalid path format"), nil
-	}
-
-	postID := parts[len(parts)-2] // Format: /feed/posts/{id}/like
-
-	// Check if the post exists
-	getItemOutput, err := h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(h.postTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-	})
-
-	if err != nil {
-		log.Printf("Error getting post: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error retrieving post"), nil
-	}
-
-	if getItemOutput.Item == nil {
-		return sendAPIResponse(404, false, "", nil, "Post not found"), nil
-	}
-
-	// Check if the user has liked the post
-	getItemOutput, err = h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(h.likeTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"user_id": &ddbTypes.AttributeValueMemberS{Value: claims.Username},
-			"post_id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-	})
-
-	if err != nil {
-		log.Printf("Error checking like: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error checking like status"), nil
-	}
-
-	if getItemOutput.Item == nil {
-		return sendAPIResponse(400, false, "", nil, "You have not liked this post"), nil
-	}
-
-	// Delete the like
-	_, err = h.dynamodbClient.DeleteItem(ctx, &dynamodb.DeleteItemInput{
-		TableName: aws.String(h.likeTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"user_id": &ddbTypes.AttributeValueMemberS{Value: claims.Username},
-			"post_id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-	})
-
-	if err != nil {
-		log.Printf("Error deleting like: %v", err)
-		return sendAPIResponse(500, false, "", nil, "Error removing like"), nil
-	}
-
-	// Update the post's like count
-	updateOutput, err := h.dynamodbClient.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName: aws.String(h.postTableName),
-		Key: map[string]ddbTypes.AttributeValue{
-			"id": &ddbTypes.AttributeValueMemberS{Value: postID},
-		},
-		UpdateExpression: aws.String("SET likes = if_not(likes - :val, :zero)"),
-		ExpressionAttributeValues: map[string]ddbTypes.AttributeValue{
-			":val":  &ddbTypes.AttributeValueMemberN{Value: "1"},
-			":zero": &ddbTypes.AttributeValueMemberN{Value: "0"},
-		},
-		ReturnValues: ddbTypes.ReturnValueAllNew,
-	})
-
-	if err != nil {
-		log.Printf("Error updating post like count: %v", err)
-		// Continue even if the like count update fails
-	}
-
-	var updatedPost Post
-	if updateOutput.Attributes != nil {
-		err = attributevalue.UnmarshalMap(updateOutput.Attributes, &updatedPost)
-		if err != nil {
-			log.Printf("Error unmarshaling updated post: %v", err)
-		}
-	}
-
-	return sendAPIResponse(200, true, "Post unliked successfully", updatedPost, ""), nil
-}
-
 // @Summary Repost a post
-// @Description Create a new post that references an existing post (repost)
+// @Description Create a new post that references an existing post (repost or quote)
 // @Tags Posts
 // @Accept json
 // @Produce json
 // @Param id path string true "Post ID to repost"
+// @Param repost body RepostRequest true "Repost information"
 // @Security BearerAuth
 // @Success 201 {object} APIResponse{data=Post} "Repost created"
+// @Failure 400 {object} APIResponse "Invalid input"
 // @Failure 401 {object} APIResponse "Unauthorized"
 // @Failure 403 {object} APIResponse "Forbidden - not admin or moderator"
 // @Failure 404 {object} APIResponse "Original post not found"
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /posts/{id}/repost [post]
 func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// Only moderators and admins can repost
-	if !isModerator(claims) {
-		return sendAPIResponse(403, false, "", nil, "Only moderators and admins can repost"), nil
+	// All authenticated users can repost
+	if claims == nil {
+		return sendAPIResponse(401, false, "", nil, "Authentication required"), nil
 	}
 
-	// TODO: Implement repost logic
-	return sendAPIResponse(201, true, "Post reposted successfully", Post{}, ""), nil
-}
+	// Extract post ID from path
+	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
+	if len(parts) < 4 {
+		return sendAPIResponse(400, false, "", nil, "Invalid path format"), nil
+	}
 
-// Helper function to decode base64
-func decodeBase64(encodedString string) ([]byte, error) {
-	// Remove data URL prefix if present
-	if strings.HasPrefix(encodedString, "data:") {
-		parts := strings.Split(encodedString, ",")
-		if len(parts) > 1 {
-			encodedString = parts[1]
+	postID := parts[len(parts)-2] // Format: /feed/posts/{id}/repost
+
+	// Get the original post from DynamoDB
+	getItemOutput, err := h.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(h.postTableName),
+		Key: map[string]ddbTypes.AttributeValue{
+			"id": &ddbTypes.AttributeValueMemberS{Value: postID},
+		},
+	})
+
+	if err != nil {
+		log.Printf("Error getting original post: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error retrieving original post"), nil
+	}
+
+	if getItemOutput.Item == nil {
+		return sendAPIResponse(404, false, "", nil, "Original post not found"), nil
+	}
+
+	// Unmarshal the original post
+	var originalPost Post
+	err = attributevalue.UnmarshalMap(getItemOutput.Item, &originalPost)
+	if err != nil {
+		log.Printf("Error unmarshaling original post: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error processing original post"), nil
+	}
+
+	// Parse request body for repost details
+	var repostReq RepostRequest
+	if err := json.Unmarshal([]byte(request.Body), &repostReq); err != nil {
+		return sendAPIResponse(400, false, "", nil, "Invalid request body"), nil
+	}
+
+	// Validate repost type
+	if repostReq.RepostType != "repost" && repostReq.RepostType != "quote" {
+		return sendAPIResponse(400, false, "", nil, "Invalid repost type. Must be 'repost' or 'quote'"), nil
+	}
+
+	// For quote reposts, require title and body
+	if repostReq.RepostType == "quote" && (repostReq.Title == "" || repostReq.Body == "") {
+		return sendAPIResponse(400, false, "", nil, "Title and body are required for quote reposts"), nil
+	}
+
+	// Get category ID - use the original post's category if not specified
+	categoryID := originalPost.CategoryID
+	if repostReq.CategoryID != "" {
+		// If a category is specified, verify it exists
+		categoryExists, err := h.categoryExists(ctx, repostReq.CategoryID)
+		if err != nil {
+			log.Printf("Error checking category: %v", err)
+			return sendAPIResponse(500, false, "", nil, "Error validating category"), nil
 		}
+
+		if !categoryExists {
+			return sendAPIResponse(400, false, "", nil, "Invalid category"), nil
+		}
+		categoryID = repostReq.CategoryID
 	}
 
-	// In a real implementation, you'd use base64.StdEncoding.DecodeString
-	// For this demo, we're just returning the string as bytes
-	return []byte(encodedString), nil
+	// Create the repost
+	now := time.Now()
+	repost := Post{
+		ID:             uuid.New().String(),
+		AuthorID:       claims.Username,
+		CategoryID:     categoryID,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		IsRepost:       1, // 1 for true (repost)
+		OriginalID:     postID,
+		RepostType:     repostReq.RepostType,
+		CollectionType: "ALL", // Set the collection type for the GSI
+	}
+
+	// For simple reposts, use the original post's content
+	if repostReq.RepostType == "repost" {
+		repost.Title = originalPost.Title
+		repost.Body = originalPost.Body
+	} else {
+		// For quote reposts, use the provided content
+		repost.Title = repostReq.Title
+		repost.Body = repostReq.Body
+	}
+
+	// Marshal the repost
+	repostItem, err := attributevalue.MarshalMap(repost)
+	if err != nil {
+		log.Printf("Error marshaling repost: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error creating repost"), nil
+	}
+
+	// Save the repost to DynamoDB
+	_, err = h.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(h.postTableName),
+		Item:      repostItem,
+	})
+
+	if err != nil {
+		log.Printf("Error saving repost: %v", err)
+		return sendAPIResponse(500, false, "", nil, "Error saving repost"), nil
+	}
+
+	return sendAPIResponse(201, true, "Post reposted successfully", repost, ""), nil
 }
 
 // handleSwaggerRequest handles requests for Swagger documentation
-func (h *FeedHandler) handleSwaggerRequest(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+func (h *FeedHandler) handleSwaggerRequest(_ context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	path := request.RequestContext.HTTP.Path
 	parts := strings.Split(path, "/")
 
