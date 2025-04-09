@@ -1238,6 +1238,11 @@ func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGa
 		return sendAPIResponse(401, false, "", nil, "Authentication required"), nil
 	}
 
+	// Check if user is a moderator or admin
+	if !isModerator(claims) {
+		return sendAPIResponse(403, false, "", nil, "Only moderators and admins can repost posts"), nil
+	}
+
 	// Extract post ID from path
 	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
 	if len(parts) < 4 {
@@ -1317,12 +1322,12 @@ func (h *FeedHandler) handleRepostPost(ctx context.Context, request events.APIGa
 		CollectionType: "ALL", // Set the collection type for the GSI
 	}
 
-	// For simple reposts, use the original post's content
+	// For simple reposts, use the original post's content (like Twitter retweet)
 	if repostReq.RepostType == "repost" {
 		repost.Title = originalPost.Title
 		repost.Body = originalPost.Body
 	} else {
-		// For quote reposts, use the provided content
+		// For quote reposts, use the provided content (like Twitter quote tweet)
 		repost.Title = repostReq.Title
 		repost.Body = repostReq.Body
 	}
