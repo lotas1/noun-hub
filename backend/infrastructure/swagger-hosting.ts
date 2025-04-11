@@ -14,67 +14,18 @@ const stack = pulumi.getStack();
 export function mergeSwaggerSpecs(): string {
   console.log("Merging Swagger specifications...");
   
-  try {
-    // Run swagger-combine via CLI to merge the specs
-    childProcess.execSync(`npx swagger-combine swagger-combine.config.json -o merged-swagger.json`, {
-      cwd: __dirname, // Use the current directory
-      stdio: "inherit"
-    });
-    
-    // Read the merged file
-    const mergedSpecPath = path.join(__dirname, "merged-swagger.json");
-    const mergedSpec = fs.readFileSync(mergedSpecPath, "utf8");
-    
-    console.log("Successfully merged Swagger specifications");
-    return mergedSpec;
-  } catch (error) {
-    console.error("Error merging Swagger specifications:", error);
-    
-    // Create a simple fallback Swagger specification
-    const fallbackSpec = {
-      swagger: "2.0",
-      info: {
-        title: "NounHub API (Fallback)",
-        version: "1.0.0",
-        description: "This is a fallback API documentation. The actual merged specification could not be generated."
-      },
-      paths: {
-        "/auth": {
-          get: {
-            summary: "Auth API",
-            description: "Please visit the individual service documentation for full API details.",
-            responses: {
-              "200": {
-                description: "Success"
-              }
-            }
-          }
-        },
-        "/feed": {
-          get: {
-            summary: "Feed API",
-            description: "Please visit the individual service documentation for full API details.",
-            responses: {
-              "200": {
-                description: "Success"
-              }
-            }
-          }
-        }
-      },
-      securityDefinitions: {
-        "BearerAuth": {
-          "type": "apiKey",
-          "name": "Authorization",
-          "in": "header",
-          "description": "Enter your JWT token in the format: Bearer <token>"
-        }
-      }
-    };
-    
-    console.log("Using fallback Swagger specification");
-    return JSON.stringify(fallbackSpec, null, 2);
-  }
+  // Run swagger-combine via CLI to merge the specs
+  childProcess.execSync(`npx swagger-combine swagger-combine.config.json -o merged-swagger.json`, {
+    cwd: __dirname, // Use the current directory
+    stdio: "inherit"
+  });
+  
+  // Read the merged file
+  const mergedSpecPath = path.join(__dirname, "merged-swagger.json");
+  const mergedSpec = fs.readFileSync(mergedSpecPath, "utf8");
+  
+  console.log("Successfully merged Swagger specifications");
+  return mergedSpec;
 }
 
 /**
