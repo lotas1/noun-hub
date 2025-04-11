@@ -3769,5 +3769,7 @@
         }
       }
     }
-  }
+  },
+  "host": "jvazclwpmf.execute-api.us-east-1.amazonaws.com",
+  "basePath": "/dev"
 }

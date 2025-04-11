@@ -11,7 +11,7 @@ const stack = pulumi.getStack();
 /**
  * Merges multiple Swagger specs into a single specification
  */
-export function mergeSwaggerSpecs(): string {
+export function mergeSwaggerSpecs(apiGatewayUrl: string, stageName: string): string {
   console.log("Merging Swagger specifications...");
   
   // Run swagger-combine via CLI to merge the specs
@@ -22,7 +22,23 @@ export function mergeSwaggerSpecs(): string {
   
   // Read the merged file
   const mergedSpecPath = path.join(__dirname, "merged-swagger.json");
-  const mergedSpec = fs.readFileSync(mergedSpecPath, "utf8");
+  let mergedSpec = fs.readFileSync(mergedSpecPath, "utf8");
+  
+  // Parse the JSON to modify it
+  const specObj = JSON.parse(mergedSpec);
+  
+  // Extract the hostname from the API Gateway URL
+  const url = new URL(apiGatewayUrl);
+  
+  // Add host and basePath for Swagger 2.0
+  specObj.host = url.host;
+  specObj.basePath = `/${stageName}`;
+  
+  // Convert back to string
+  mergedSpec = JSON.stringify(specObj, null, 2);
+  
+  // Write the modified spec back to the file
+  fs.writeFileSync(mergedSpecPath, mergedSpec);
   
   console.log("Successfully merged Swagger specifications");
   return mergedSpec;
@@ -31,7 +47,11 @@ export function mergeSwaggerSpecs(): string {
 /**
  * Creates S3 bucket, CloudFront distribution, and uploads Swagger UI assets
  */
-export function setupSwaggerHosting(tags: Record<string, string>): {
+export function setupSwaggerHosting(
+  tags: Record<string, string>,
+  apiGatewayUrl: pulumi.Output<string>,
+  stageName: string
+): {
   bucket: aws.s3.Bucket;
   distribution: aws.cloudfront.Distribution;
   swaggerUrl: pulumi.Output<string>;
@@ -64,7 +84,7 @@ export function setupSwaggerHosting(tags: Record<string, string>): {
   });
 
   // Merge Swagger specs and upload to S3
-  const mergedSpec = mergeSwaggerSpecs();
+  const mergedSpec = apiGatewayUrl.apply(url => mergeSwaggerSpecs(url, stageName));
   
   // Upload the merged Swagger JSON to S3
   const swaggerJsonObject = new aws.s3.BucketObject("merged-swagger-json", {
@@ -208,4 +228,4 @@ function createCustomSwaggerIndexHtml(): string {
   </script>
 </body>
 </html>`;
-} 
+}

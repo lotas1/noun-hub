@@ -458,7 +458,11 @@ export const apiDocsUrls = apiDocs.exportDocUrls(api, stack, domainName);
 export const apiDocsUrl = swaggerUiUrl;
 
 // Setup the consolidated Swagger API documentation with S3 + CloudFront hosting
-const swaggerHostingSetup = swaggerHosting.setupSwaggerHosting(commonTags);
+const swaggerHostingSetup = swaggerHosting.setupSwaggerHosting(
+  commonTags,
+  api.apiEndpoint,
+  stack
+);
 
 // Export the CloudFront URL for the consolidated Swagger documentation
 export const consolidatedSwaggerUrl = swaggerHostingSetup.swaggerUrl;
