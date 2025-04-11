@@ -291,7 +291,7 @@ func isModerator(claims *Claims) bool {
 // @Success 200 {object} APIResponse{data=[]Post} "Successful operation"
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /posts [get]
-func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
+func (h *FeedHandler) handleGetPosts(ctx context.Context, request events.APIGatewayV2HTTPRequest, _ *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Get query parameters
 	categoryID := request.QueryStringParameters["category"]
 	authorID := request.QueryStringParameters["author"]
@@ -501,7 +501,7 @@ func parseNextToken(nextToken string) (map[string]ddbTypes.AttributeValue, error
 // @Failure 404 {object} APIResponse "Post not found"
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /posts/{id} [get]
-func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, claims *Claims) (events.APIGatewayV2HTTPResponse, error) {
+func (h *FeedHandler) handleGetPost(ctx context.Context, request events.APIGatewayV2HTTPRequest, _ *Claims) (events.APIGatewayV2HTTPResponse, error) {
 	// Extract post ID from path
 	parts := strings.Split(request.RequestContext.HTTP.Path, "/")
 	if len(parts) < 4 {
@@ -860,57 +860,13 @@ func (h *FeedHandler) handleDeletePost(ctx context.Context, request events.APIGa
 // @Failure 500 {object} APIResponse "Server error"
 // @Router /categories [get]
 func (h *FeedHandler) handleGetCategories(ctx context.Context, _ events.APIGatewayV2HTTPRequest, _ *Claims) (events.APIGatewayV2HTTPResponse, error) {
-	// Log configuration details for debugging
-	log.Printf("DynamoDB configuration: TableName=%s, CategoryIndexName=%s", h.categoryTableName, "NameIndex")
-	log.Printf("Environment vars check: FEED_CATEGORY_TABLE_NAME=%s", os.Getenv("FEED_CATEGORY_TABLE_NAME"))
-
 	// Check if DynamoDB client is properly initialized
 	if h.dynamodbClient == nil {
 		log.Printf("Error: DynamoDB client is nil")
 		return sendAPIResponse(500, false, "", nil, "DynamoDB client configuration error"), nil
 	}
 
-	// First try a simple scan operation to see if we can connect to DynamoDB at all
-	log.Printf("Attempting scan operation first for diagnostic purposes")
-	scanInput := &dynamodb.ScanInput{
-		TableName: aws.String(h.categoryTableName),
-		Limit:     aws.Int32(10), // Limit to 10 results
-	}
-
-	scanOutput, scanErr := h.dynamodbClient.Scan(ctx, scanInput)
-	if scanErr != nil {
-		log.Printf("Diagnostic scan failed: %+v", scanErr)
-		log.Printf("Error type: %T", scanErr)
-
-		// Try to get more details about the configuration
-		log.Printf("TableName: %s", h.categoryTableName)
-
-		// Try to get region information
-		awsRegion := os.Getenv("AWS_REGION")
-		if awsRegion == "" {
-			log.Printf("AWS_REGION environment variable is not set")
-		} else {
-			log.Printf("AWS_REGION environment variable: %s", awsRegion)
-		}
-	} else {
-		log.Printf("Diagnostic scan succeeded, found %d items", len(scanOutput.Items))
-
-		// If scan worked, unmarshal and return the results directly
-		var categories []Category
-		err := attributevalue.UnmarshalListOfMaps(scanOutput.Items, &categories)
-		if err != nil {
-			log.Printf("Error unmarshaling categories from scan: %v", err)
-			return sendAPIResponse(500, false, "", nil, "Error processing categories"), nil
-		}
-
-		log.Printf("Successfully retrieved %d categories using scan operation", len(categories))
-		return sendAPIResponse(200, true, "Categories retrieved successfully", categories, ""), nil
-	}
-
-	// If scan failed, still try the original query operation as a fallback
-	log.Printf("Attempting original query operation as fallback")
-
-	// Use query operation with NameIndex instead of scanning all categories
+	// Query categories using the NameIndex
 	queryInput := &dynamodb.QueryInput{
 		TableName:              aws.String(h.categoryTableName),
 		IndexName:              aws.String("NameIndex"),
@@ -920,14 +876,9 @@ func (h *FeedHandler) handleGetCategories(ctx context.Context, _ events.APIGatew
 		},
 	}
 
-	log.Printf("QueryInput details: %+v", queryInput)
-
-	// Execute the query
 	queryOutput, err := h.dynamodbClient.Query(ctx, queryInput)
 	if err != nil {
-		// Log detailed error information
-		log.Printf("Error querying categories (detailed): %+v", err)
-		log.Printf("Error type: %T", err)
+		log.Printf("Error querying categories: %v", err)
 		return sendAPIResponse(500, false, "", nil, "Error retrieving categories"), nil
 	}
 
@@ -938,7 +889,6 @@ func (h *FeedHandler) handleGetCategories(ctx context.Context, _ events.APIGatew
 		return sendAPIResponse(500, false, "", nil, "Error processing categories"), nil
 	}
 
-	log.Printf("Successfully retrieved %d categories using query operation", len(categories))
 	return sendAPIResponse(200, true, "Categories retrieved successfully", categories, ""), nil
 }
 
