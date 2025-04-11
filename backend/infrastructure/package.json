@@ -3,7 +3,10 @@
     "main": "index.ts",
     "devDependencies": {
         "@types/node": "^18",
-        "typescript": "^5.0.0"
+        "typescript": "^5.0.0",
+        "swagger-combine": "^1.0.0",
+        "swagger-ui-dist": "^5.10.3",
+        "mime": "^3.0.0"
     },
     "dependencies": {
         "@pulumi/aws": "^6.0.0",

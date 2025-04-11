@@ -7,6 +7,7 @@ import * as aws from "@pulumi/aws";
 // Import the API documentation module
 import * as apiDocs from "./api-docs";
 import { createAuthResources } from "./modules/auth";
+import * as swaggerHosting from "./swagger-hosting";
 
 const config = new pulumi.Config();
 const stack = pulumi.getStack();
@@ -455,6 +456,12 @@ export const apiDocsUrls = apiDocs.exportDocUrls(api, stack, domainName);
 
 // Export the Swagger UI URL for easy access (for backward compatibility)
 export const apiDocsUrl = swaggerUiUrl;
+
+// Setup the consolidated Swagger API documentation with S3 + CloudFront hosting
+const swaggerHostingSetup = swaggerHosting.setupSwaggerHosting(commonTags);
+
+// Export the CloudFront URL for the consolidated Swagger documentation
+export const consolidatedSwaggerUrl = swaggerHostingSetup.swaggerUrl;
 
 //------------------------------------------------------------
 // 6) Custom Domain Configuration
